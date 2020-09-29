@@ -1,0 +1,6 @@
+__pycache__
+Win32
+Release
+x64
+.idea
+.pytest_cache

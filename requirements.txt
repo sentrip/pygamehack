@@ -1,0 +1,2 @@
+pygdbmi
+psutil
