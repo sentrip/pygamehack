@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="TestProgram.cpp" />
+    <ClCompile Include="Hack.cpp">
+      <Filter>hack</Filter>
+    </ClCompile>
+    <ClCompile Include="Proc.cpp">
+      <Filter>hack</Filter>
+    </ClCompile>
+    <ClCompile Include="pygamehack.cpp">
+      <Filter>hack</Filter>
+    </ClCompile>
+    <ClCompile Include="libdasm.c">
+      <Filter>libdasm</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Hack.h">
+      <Filter>hack</Filter>
+    </ClInclude>
+    <ClInclude Include="Proc.h">
+      <Filter>hack</Filter>
+    </ClInclude>
+    <ClInclude Include="libdasm.h">
+      <Filter>libdasm</Filter>
+    </ClInclude>
+    <ClInclude Include="opcode_tables.h">
+      <Filter>libdasm</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="hack">
+      <UniqueIdentifier>{3b99e5eb-2713-4738-8c5e-e15ec74e54f5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="libdasm">
+      <UniqueIdentifier>{54e2f919-429e-461f-9314-92b509633c64}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
