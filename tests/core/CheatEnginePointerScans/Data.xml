@@ -1,0 +1,58 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--ReClass.NET 1.2 by KN4CK3R-->
+<!--Website: https://github.com/ReClassNET/ReClass.NET-->
+<reclass version="65537" type="x86">
+  <custom_data />
+  <type_mapping>
+    <TypeBool>bool</TypeBool>
+    <TypeInt8>int8_t</TypeInt8>
+    <TypeInt16>int16_t</TypeInt16>
+    <TypeInt32>int32_t</TypeInt32>
+    <TypeInt64>int64_t</TypeInt64>
+    <TypeUInt8>uint8_t</TypeUInt8>
+    <TypeUInt16>uint16_t</TypeUInt16>
+    <TypeUInt32>uint32_t</TypeUInt32>
+    <TypeUInt64>uint64_t</TypeUInt64>
+    <TypeFloat>float</TypeFloat>
+    <TypeDouble>double</TypeDouble>
+    <TypeVector2>Vector2</TypeVector2>
+    <TypeVector3>Vector3</TypeVector3>
+    <TypeVector4>Vector4</TypeVector4>
+    <TypeMatrix3x3>Matrix3x3</TypeMatrix3x3>
+    <TypeMatrix3x4>Matrix3x4</TypeMatrix3x4>
+    <TypeMatrix4x4>Matrix4x4</TypeMatrix4x4>
+    <TypeUtf8Text>char</TypeUtf8Text>
+    <TypeUtf16Text>wchar_t</TypeUtf16Text>
+    <TypeUtf32Text>char32_t</TypeUtf32Text>
+    <TypeFunctionPtr>void*</TypeFunctionPtr>
+  </type_mapping>
+  <enums />
+  <classes>
+    <class uuid="myDvYxtbCkSG73cFU/DjiA==" name="App" comment="" address="400000">
+      <node type="UInt32Node" name="power_0" comment="" hidden="false" />
+      <node type="UInt32Node" name="power_1" comment="" hidden="false" />
+      <node type="UInt32Node" name="power_2" comment="" hidden="false" />
+      <node type="UInt32Node" name="power_3" comment="" hidden="false" />
+      <node type="PointerNode" name="v_ptr" comment="" hidden="false">
+        <node type="ClassInstanceNode" name="N0000008A" comment="" hidden="false" reference="rlVdo2qN2kakPzI0qR+sIg==" />
+      </node>
+      <node type="PointerNode" name="game_ptr" comment="" hidden="false">
+        <node type="ClassInstanceNode" name="N0000009E" comment="" hidden="false" reference="DrTQV0hOZEyLm5hKbTvw+w==" />
+      </node>
+      <node type="ClassInstanceNode" name="game" comment="" hidden="false" reference="DrTQV0hOZEyLm5hKbTvw+w==" />
+    </class>
+    <class uuid="rlVdo2qN2kakPzI0qR+sIg==" name="uint32" comment="" address="400000" />
+    <class uuid="DrTQV0hOZEyLm5hKbTvw+w==" name="Game" comment="" address="400000">
+      <node type="UInt32Node" name="selected" comment="" hidden="false" />
+      <node type="PointerNode" name="level_ptr" comment="" hidden="false">
+        <node type="ClassInstanceNode" name="N000000B2" comment="" hidden="false" reference="bzXkR9eZskKzfSA8zC03Tg==" />
+      </node>
+      <node type="ClassInstanceNode" name="level" comment="" hidden="false" reference="bzXkR9eZskKzfSA8zC03Tg==" />
+    </class>
+    <class uuid="bzXkR9eZskKzfSA8zC03Tg==" name="Level" comment="" address="400000">
+      <node type="UInt32Node" name="u" comment="" hidden="false" />
+      <node type="FloatNode" name="f" comment="" hidden="false" />
+      <node type="DoubleNode" name="d" comment="" hidden="false" />
+    </class>
+  </classes>
+</reclass>
