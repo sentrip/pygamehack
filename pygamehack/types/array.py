@@ -1,7 +1,7 @@
 import copy
 from typing import Any, List, Optional, TypeVar, Tuple, Union
 
-from cpygamehack import Address, buf
+from pygamehack.c import Address, buf
 from ..struct_meta import StructMeta, StructType
 from ..variable import IBufferContainerVariable, IConstVariable
 

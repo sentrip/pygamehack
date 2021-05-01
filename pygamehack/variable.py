@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from cpygamehack import Address, buf
+from pygamehack.c import Address, buf
 from .struct import Struct
 
 

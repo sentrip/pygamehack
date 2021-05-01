@@ -1,11 +1,11 @@
-from cpygamehack import *
+from pygamehack.c import *
 from .struct import Struct
 from .struct_meta import TypeWrapper, StructType
 from .variable import Variable, ConstVariable, ListVariable, DictVariable
 from .types import String as str, CString as c_str, Array as arr, CArray as c_arr
 
 __all__ = [
-    # cpygamehack
+    # pygamehack.c
     'Address',
     'Buffer',
     'Hack',

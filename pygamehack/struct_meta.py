@@ -1,7 +1,7 @@
 import inspect
 from abc import ABCMeta, abstractmethod
 from typing import Union
-import cpygamehack as cgh
+import pygamehack.c as cgh
 
 
 # TODO: Child variable is buffer when parent is not buffer
@@ -501,7 +501,7 @@ class StructType(object):
         # Forward definition
         if isinstance(typ, str):
             return StructType.from_string(typ)
-        # Compound type from cpygamehack
+        # Compound type from pygamehack.c
         elif isinstance(typ, tuple):
             return StructType.from_tuple(typ)
         # User-defined compound type

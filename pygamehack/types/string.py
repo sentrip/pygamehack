@@ -1,6 +1,6 @@
 from typing import Union
 
-from cpygamehack import buf
+from pygamehack.c import buf
 from ..variable import IBufferContainerVariable, IConstVariable
 
 

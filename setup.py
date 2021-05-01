@@ -1,4 +1,8 @@
-from distutils.core import setup, Extension
+from setuptools import setup
+
+from pybind11.setup_helpers import Pybind11Extension
+
+__version__ = "0.0.1"
 
 sources = [
     'src/external/libdasm.c',
@@ -12,25 +16,27 @@ sources = [
     'src/pygamehack.cpp',
 ]
 
-sfc_module = Extension(
-    'cpygamehack', 
-    sources=sources,
-    include_dirs=['venv/lib/site-packages/pybind11/include'],
-    library_dirs=[],
-    libraries=[],
-    language='c++',
-    extra_compile_args=['/std:c++17'],
-    extra_link_args=[],
-)
-
 setup(
     name='pygamehack',
-    version='1.0',
+    version=__version__,
+    author="Djordje Pepic",
+    author_email="djordje.m.pepic@gmail.com",
+    url="https://github.com/sentrip/pygamehack",
+    long_description="",
     description='Python game hacking interface',
-    ext_modules=[sfc_module],
     packages=[
         'pygamehack', 'pygamehack.gdb', 'pygamehack.types',
         'pygamehack_gui', 'pygamehack_gui.core'
     ],
-    requires=[]
+    ext_modules=[Pybind11Extension(
+        'pygamehack.c',
+        sources,
+        cxx_std=17,
+        define_macros=[('VERSION_INFO', __version__)]
+    )],
+    python_requires='>=3.7',
+    install_requires=['pybind11>=2.6.2'],
+    extras_require={"test": "pytest"},
+    zip_safe=False
 )
+

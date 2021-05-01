@@ -1,7 +1,7 @@
 from abc import ABC
 from typing import Optional, Union
 
-from cpygamehack import Address
+from pygamehack.c import Address
 from .struct_meta import StructMeta, StructInfo, StructData
 
 

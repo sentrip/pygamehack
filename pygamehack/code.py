@@ -5,7 +5,7 @@ from collections import namedtuple, deque
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Tuple, Optional, Union
 
-from cpygamehack import Address, Instruction, Hack, MemoryScan
+from pygamehack.c import Address, Instruction, Hack, MemoryScan
 from .gdb import GDB, Watch
 from .struct import Struct
 

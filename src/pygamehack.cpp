@@ -1144,9 +1144,15 @@ void define_instruction(py::module& m)
 //endregion
 
 
-PYBIND11_MODULE(cpygamehack, m)
+PYBIND11_MODULE(c, m)
 {
-    m.attr("__version__") = "1.0";
+    #define STRINGIFY(x) #x
+    #define MACRO_STRINGIFY(x) STRINGIFY(x)
+    #ifdef VERSION_INFO
+        m.attr("__version__") = MACRO_STRINGIFY(VERSION_INFO);
+    #else
+        m.attr("__version__") = "dev";
+    #endif
 
     define_process(m);
     
