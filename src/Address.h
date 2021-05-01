@@ -87,9 +87,8 @@ private:
     uptr            _address{ 0 };
     u64             _type: 2;
     u64             _is_loaded: 1;
-    u64             _add_first_offset_to_begin: 1;
     u64             _auto_updates: 1;
-    u64             _name_handle: 27;
+    u64             _name_handle: 28;
     u64             _update_mask: 32;
 
     union {

@@ -9,7 +9,6 @@ Address::Address(Hack& hack):
     _hack{&hack},
     _type{u64(Type::MANUAL)},
     _is_loaded{false},
-    _add_first_offset_to_begin{false},
     _auto_updates{false},
     _name_handle{0},
     _update_mask{UPDATE_ALL}
@@ -27,7 +26,6 @@ Address::Address(const Address& v):
     _address{v._address},
     _type{v._type},
     _is_loaded{v._is_loaded},
-    _add_first_offset_to_begin{false},
     _auto_updates{false},
     _name_handle{v.name().empty() ? 0u : _hack->address_names().add(v.name())},
     _update_mask{v._update_mask}
@@ -44,7 +42,6 @@ Address& Address::operator=(const Address& v)
         _address = v._address;
         _type = v._type;
         _is_loaded = v._is_loaded;
-        _add_first_offset_to_begin = v._add_first_offset_to_begin;
         _auto_updates = false;
         _name_handle = v.name().empty() ? 0u : _hack->address_names().add(v.name());
         _update_mask = v._update_mask;
@@ -60,7 +57,6 @@ Address::Address(Address&& v) noexcept :
     _address{v._address},
     _type{v._type},
     _is_loaded{v._is_loaded},
-    _add_first_offset_to_begin{v._add_first_offset_to_begin},
     _auto_updates{false},
     _name_handle{v._name_handle},
     _update_mask{v._update_mask}
@@ -78,7 +74,6 @@ Address& Address::operator=(Address&& v) noexcept
         _address = v._address;
         _type = v._type;
         _is_loaded = v._is_loaded;
-        _add_first_offset_to_begin = v._add_first_offset_to_begin;
         _auto_updates = false;
         _name_handle = v._name_handle;
         _update_mask = v._update_mask;
@@ -113,7 +108,6 @@ Address Address::Dynamic(Address& parent, const uptr_path& offsets, bool add_fir
 {
     Address a{*parent._hack};
     a._type = u64(Type::DYNAMIC);
-    a._add_first_offset_to_begin = add_first_offset_to_parent_address;
     new (a._storage) DynamicAddressData;
     a._dynamic.parent = &parent;
     a._dynamic.offsets = offsets;
@@ -124,7 +118,6 @@ Address Address::CreateDynamic(Address& parent, const u32* offsets, usize n_offs
 {
     Address a{*parent._hack};
     a._type = u64(Type::DYNAMIC);
-    a._add_first_offset_to_begin = add_first_offset_to_parent_address;
     new (a._storage) DynamicAddressData;
     a._dynamic.parent = &parent;
     a._dynamic.offsets.reserve(n_offsets);
@@ -193,7 +186,7 @@ uptr Address::load()
     }
     else if (type() == Type::DYNAMIC) {
         if (!_dynamic.parent->loaded()) _dynamic.parent->load();
-        _address = _hack->process().follow_ptr_path(_dynamic.parent->value(), _dynamic.offsets, !bool(_add_first_offset_to_begin));
+        _address = _hack->process().follow(_dynamic.parent->value(), _dynamic.offsets);
         _is_loaded = _address != 0;
     }
     

@@ -1,5 +1,7 @@
 import pygamehack as gh
 
+# TODO: Test buffer read/write bool/float/double/ptr/usize
+
 
 def test_buffer_read_basic(hack, app):
     hack.attach(app.pid)

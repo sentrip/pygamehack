@@ -134,16 +134,13 @@ public:
         return get_pygamehack_protect(old_protect);
     }
 
-	uptr follow_ptr_path(uptr ptr, const uptr_path& offsets, usize ptr_size, bool read_first) const
+	uptr follow_ptr_path(uptr ptr, const uptr_path& offsets, usize ptr_size) const
     {
         uptr addr = ptr;
-        bool did_read_once = false;
-        for (const auto& off : offsets) {
-            if (read_first || did_read_once) {
-                read_memory(&addr, (LPCVOID)addr, ptr_size);
-            }
-            addr += off;
-            did_read_once = true;
+        usize size = offsets.size();
+        for (usize i = 0; i < size; ++i) {
+            if (i > 0) read_memory(&addr, (LPCVOID)addr, ptr_size);
+            addr += offsets[i];
         }
         return addr;
     }
@@ -495,9 +492,9 @@ uptr Process::find_char(i8 value, uptr begin, usize size) const
 	return 0;
 }
 
-uptr Process::follow_ptr_path(uptr start, const uptr_path& offsets, bool read_first) const
+uptr Process::follow(uptr start, const uptr_path& offsets) const
 {
-	return API.follow_ptr_path(start, offsets, _arch == Arch::X86 ? 4u : 8u, read_first);
+	return API.follow_ptr_path(start, offsets, _arch == Arch::X86 ? 4u : 8u);
 }
 
 void Process::iter_regions(uptr begin, usize size, iter_region_callback&& callback, Memory::Protect prot, bool read, usize block_size) const

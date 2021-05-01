@@ -1,8 +1,9 @@
 import pygamehack as gh
 
-
-# TODO: Test iter regions
-# TODO: Test arbitrary regex scan
+# TODO: Test hack read/write bool/float/double/ptr/usize
+# TODO: Test hack scan string
+# TODO: Test hack arbitrary regex scan
+# TODO: Test hack scan_modify
 
 
 def test_hack_attach(hack, app):
@@ -13,12 +14,6 @@ def test_hack_attach(hack, app):
         assert hack.process.arch == (gh.Process.Arch.x64 if app.arch == 64 else gh.Process.Arch.x86)
         hack.detach()
         assert not hack.process.attached
-
-
-def test_hack_protect(hack, app):
-    hack.attach(app.pid)
-    with hack.process.protect(app.addr.marker, 4):
-        assert hack.read_u32(app.addr.marker) == app.marker_value
 
 
 def test_hack_read_basic(hack, app):
@@ -140,7 +135,11 @@ def test_hack_find(hack, app):
 
 def test_hack_scan_type(hack, app):
     hack.attach(app.pid)
-
-    results = hack.scan_u32(app.marker_value, app.addr.int_types.value - 100000, 32 + 10000000, 1)
+    results = hack.scan(gh.MemoryScan.u32(
+        app.marker_value,
+        app.addr.int_types.value - 100000,
+        32 + 10000000,
+        max_results=1)
+    )
     assert len(results) == 1
     assert results[0] == app.addr.marker

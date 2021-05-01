@@ -91,7 +91,7 @@ public:
 	
     uptr find_char(i8 value, uptr begin, usize size) const;
 
-	uptr follow_ptr_path(uptr start, const uptr_path& offsets, bool read_first) const;
+	uptr follow(uptr start, const uptr_path& offsets) const;
 
 	void iter_regions(uptr begin, usize size, iter_region_callback&& callback, Memory::Protect prot = Memory::Protect::NONE, bool read=true, usize block_size = 4096) const;
     

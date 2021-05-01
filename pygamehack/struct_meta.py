@@ -421,6 +421,9 @@ class StructType(object):
         self.element_count = element_count
         self.container_type = container_type
 
+    def __str__(self):
+        return self.name
+
     def __call__(self, *args, **kwargs):
         t = self.type
 
@@ -624,7 +627,7 @@ class StructField(object):
         field_kwargs = kwargs if StructMeta.is_struct(self.type) else {}
         address = None
         if getattr(instance, 'address', None) is not None:
-            address = cgh.Address(instance.address, self.struct.offsets[self.name], True)
+            address = cgh.Address(instance.address, self.struct.offsets[self.name])
         return self.type(address, **field_kwargs)
 
     def create_struct_or_buffer_getter(self, instance, is_buffer_type):

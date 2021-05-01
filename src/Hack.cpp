@@ -7,6 +7,7 @@
 #include <regex>
 #include <fstream>
 #include <filesystem>
+#include <execution>
 
 #include <thread>
 #include <mutex>
@@ -16,16 +17,6 @@
 namespace pygamehack {
 
 //region Memory Scan
-
-static constexpr size_t SCAN_BLOCK_SIZE_BASIC = 256 * 1024;
-static constexpr size_t SCAN_BLOCK_SIZE_STRING = 2 * 1024 * 1024;
-static constexpr size_t MIN_SCAN_SIZE_FOR_THREADING = 2 * 1024 * 1024;
-static constexpr size_t MIN_SCAN_REGIONS_PER_THREAD = 32;
-
-struct ScanRegion {
-    uptr begin{};
-    usize size{};
-};
 
 static Process::iter_region_callback process_region_func(std::vector<uptr>& results, const Process& process, const u8* value, usize value_size, uptr begin, usize size, usize max_results, bool regex, std::mutex* mutex)
 {
@@ -85,6 +76,16 @@ static Process::iter_region_callback process_region_func(std::vector<uptr>& resu
 
 static void do_fast_memory_scan(usize n_threads, std::vector<uptr>& results, const Process& process, const u8* value, usize value_size, uptr begin, usize size, usize max_results, bool regex)
 {
+    static constexpr size_t SCAN_BLOCK_SIZE_BASIC = 256 * 1024;
+    static constexpr size_t SCAN_BLOCK_SIZE_STRING = 2 * 1024 * 1024;
+    static constexpr size_t MIN_SCAN_SIZE_FOR_THREADING = 2 * 1024 * 1024;
+    static constexpr size_t MIN_SCAN_REGIONS_PER_THREAD = 32;
+
+    struct ScanRegion {
+        uptr begin{};
+        usize size{};
+    };
+
     if (n_threads == 0 || size <= MIN_SCAN_SIZE_FOR_THREADING) {
         process.iter_regions(begin, size, process_region_func(results, process, value, value_size, begin, size, max_results, regex, nullptr));
         return;
@@ -121,7 +122,6 @@ static void do_fast_memory_scan(usize n_threads, std::vector<uptr>& results, con
             ScanRegion region;
             std::vector<u8> data;
             data.resize(block_size);
-            
 
             while (!done.load(std::memory_order_acquire))
             {
@@ -155,6 +155,26 @@ static void do_fast_memory_scan(usize n_threads, std::vector<uptr>& results, con
     // Wait for threads to finish
     for (auto& thread: threads) {
         thread.join();
+    }
+}
+
+static void do_fast_memory_scan_reduce(usize n_threads, std::vector<uptr>& results, const std::vector<uptr>& previous_results, const Process& process, const u8* value, usize value_size, bool regex)
+{
+    PGH_ASSERT(value_size <= 64, "No support for scan_modify_loop with large strings (>=64)");
+
+    n_threads = 0; // TODO: Threaded memory scan reduce
+
+    if (n_threads == 0) {
+        results.reserve(previous_results.size());
+
+        u8 buffer[64]{};
+        for (const uptr r: previous_results) {
+            _process.read_memory(buffer, r, scan.value_size);
+            if (memcmp(scan.data(), buffer, scan.value_size) == 0) {
+                results.push_back(r);
+            }
+        }
+        return;
     }
 }
 
@@ -192,26 +212,40 @@ void Hack::detach()
     _process.detach();
 }
 
-uptr Hack::follow(uptr begin, const uptr_path& offsets, bool add_first_offset_to_begin) const
-{
-    return _process.follow_ptr_path(begin, offsets, !add_first_offset_to_begin);
-}
-
 uptr Hack::find(i8 value, uptr begin, usize size) const
 {
     return _process.find_char(value, begin, size);
 }
 
-std::vector<uptr> Hack::scan(const u8* value, usize value_size, uptr begin, usize size, usize max_results, bool regex, bool threaded) const
+std::vector<uptr> Hack::scan(Scan& scan) const
 {
     std::vector<uptr> results;
-    do_fast_memory_scan(usize(threaded), results, _process, value, value_size, begin, size, max_results, regex);
+    do_fast_memory_scan(usize(scan.threaded), results, _process, scan.data(), scan.value_size, scan.begin, scan.size, scan.max_results, scan.regex);
     return results;
 }
 
-std::vector<uptr> Hack::scan(const string& v, uptr begin, usize size, usize max_results, bool regex, bool threaded) const
+std::vector<uptr> Hack::scan_reduce(const std::vector<uptr>& results, const Scan& scan) const
 {
-    return scan((const u8*)v.c_str(), v.size(), begin, size, max_results, regex, threaded);
+    std::vector<uptr> merged_results;
+    do_fast_memory_scan_reduce(usize(scan.threaded), merged_results, results, scan.data(), scan.value_size, scan.regex);
+    return merged_results;
+}
+
+std::vector<uptr> Hack::scan_modify(Scan& scan, ScanModifyLoopFunc&& modify) const
+{
+    bool should_continue = false;
+    std::vector<uptr> results, reduced_results;
+    usize n_threads = usize(scan.threaded);
+    usize value_size = scan.value_size;
+    results = this->scan(scan);
+    while (true) {
+        if (should_continue) std::swap(results, reduced_results);
+        should_continue = modify(scan);
+        do_fast_memory_scan_reduce(n_threads, reduced_results, results, scan.data(), value_size, scan.regex);
+        if (!should_continue) break;
+    }
+
+    return reduced_results;
 }
 
 void Hack::start_auto_update(Address& address)
@@ -301,6 +335,72 @@ string Hack::read_string(uptr ptr, usize size) const
 void Hack::write_string(uptr ptr, const string& v) const
 {
 	_process.write_memory(ptr, v.c_str(), v.size());
+}
+
+//endregion
+
+//region Hack::Scan
+
+Hack::Scan::Scan(u64 type_hash, const u8* data, usize value_size, uptr begin, usize size, usize max_results, bool read, bool write, bool execute, bool regex, bool threaded):
+    begin{begin},
+    size{size},
+    value_size{value_size},
+    max_results{max_results},
+    type_hash{type_hash},
+    read{read},
+    write{write},
+    execute{execute},
+    regex{regex},
+    threaded{threaded}
+{
+    PGH_ASSERT(read || write || execute, "To perform a scan, one of (read, write, execute) must be set to 'True'");
+
+    if (value_size > BUFFER_SIZE) {
+        ptr = (u8*)malloc(value_size);
+        memset(ptr, 0, value_size);
+    }
+    else {
+        memcpy(buffer, data, value_size);
+    }
+}
+
+Hack::Scan::Scan(const string& data, uptr begin, usize size, usize max_results, bool read, bool write, bool execute, bool regex, bool threaded):
+    Scan{typeid(string).hash_code(), (const u8*)data.c_str(), data.size(), begin, size, max_results, read, write, execute, regex, threaded}
+{}
+
+Hack::Scan::~Scan()
+{
+    if (ptr) {
+        free(ptr);
+    }
+}
+
+const u8* Hack::Scan::data() const
+{
+    return ptr ? ptr : buffer;
+}
+
+const u64 Hack::Scan::type_id() const
+{
+    return type_hash;
+}
+
+void Hack::Scan::set_value(u64 type_hash, const u8* data, usize value_size)
+{
+    PGH_ASSERT(type_hash == this->type_hash, "Cannot change the value type of a MemoryScan");
+
+    if (value_size > BUFFER_SIZE) {
+        memcpy(ptr, data, value_size);
+    }
+    else {
+        memcpy(buffer, data, value_size);
+    }
+    this->value_size = value_size;
+}
+
+void Hack::Scan::set_value(const string& data)
+{
+    set_value(typeid(string).hash_code(), (const u8*)data.c_str(), data.size());
 }
 
 //endregion

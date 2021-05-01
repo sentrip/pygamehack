@@ -1,5 +1,6 @@
 import pygamehack as gh
 
+# TODO: Test struct read/write bool/float/double/ptr/usize
 # TODO: Test struct read/write with all things
 
 

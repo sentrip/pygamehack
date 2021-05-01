@@ -5,7 +5,7 @@ from collections import namedtuple, deque
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Tuple, Optional, Union
 
-from cpygamehack import Address, Instruction, Hack
+from cpygamehack import Address, Instruction, Hack, MemoryScan
 from .gdb import GDB, Watch
 from .struct import Struct
 
@@ -255,12 +255,14 @@ def _code_scan_in_process(hack, code):
     begin, size = _code_scan_get_begin_size(hack, code)
 
     # First scan preferred region
-    results = hack.scan(raw_code, begin, size, 1, True, False)
+    # results = hack.scan(raw_code, begin, size, 1, True, False)
+    results = hack.scan(MemoryScan(raw_code, begin, size, max_results=1, regex=True, threaded=False))
 
     # Otherwise scan entire memory range
     if not results:
         # TODO: scan only target process memory instead of whole thing?
         # results = hack.scan(raw_code, 0, hack.process.max_ptr, 1, True)
+        results = hack.scan(MemoryScan(raw_code, 0, hack.process.max_ptr, max_results=1, regex=True, threaded=False))
 
         if not results:
             raise RuntimeError(f'Did not find any results for Code[{code.code}]')

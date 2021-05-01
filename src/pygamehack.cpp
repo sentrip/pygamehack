@@ -68,6 +68,12 @@ static constexpr auto process_iter = [](py::object& callback)
     });
 };
 
+static constexpr auto process_follow = [](Process& self, uptr begin, const uptr_path& offsets)
+{
+    py::gil_scoped_release release;
+    return self.follow(begin, offsets);
+};
+
 static constexpr auto process_iter_regions = [](Process& self, uptr begin, usize size, py::object& callback, Memory::Protect prot, usize block_size)
 {
     py::gil_scoped_release release;
@@ -112,6 +118,11 @@ static constexpr auto buffer_read_string = [](Buffer& self, uptr offset, usize s
     return self.read_string(offset, size);
 };
 
+static constexpr auto buffer_read_dynamic_string = [](Buffer& self, uptr offset, usize size)
+{
+    return buffer_read_string(self, offset, size ? std::min<usize>(size, self.size() - offset) : std::min<usize>(self.strlen(offset), self.size() - offset));
+};
+
 static constexpr auto buffer_write_string = [](Buffer& self, uptr offset, const string& data) 
 {
     py::gil_scoped_release release;
@@ -122,30 +133,17 @@ static constexpr auto buffer_write_string = [](Buffer& self, uptr offset, const 
 
 //region Python wrappers - Hack
 
-static constexpr auto hack_follow = [](Hack& self, uptr begin, const uptr_path& offsets, bool add_first_offset_to_begin) 
-{
-    py::gil_scoped_release release;
-    return self.follow(begin, offsets, add_first_offset_to_begin);
-};
-
 static constexpr auto hack_find = [](Hack& self, i8 value, uptr begin, usize size) 
 {
     py::gil_scoped_release release;
     return self.find(value, begin, size);
 };
 
-static constexpr auto hack_scan_bytes = [](Hack& self, const string& value, uptr begin, usize size, usize max_results, bool regex, bool threaded) 
+static constexpr auto hack_scan = [](Hack& self, Hack::Scan& scan)
 {
     py::gil_scoped_release release;
-    return self.scan(value, begin, size, max_results, regex, threaded);
+    return self.scan(scan);
 };
-
-template<typename T>
-static auto hack_scan_type(Hack& self, const T& value, uptr begin, usize size, usize max_results, bool threaded) 
-{
-    py::gil_scoped_release release;
-    return self.scan<T>(value, begin, size, max_results, threaded);
-}
 
 static constexpr auto hack_read_buffer = [](Hack& self, uptr src, Buffer& dst) 
 {
@@ -165,6 +163,11 @@ static constexpr auto hack_read_string = [](Hack& self, uptr src, usize size)
     return self.read_string(src, size);
 };
 
+static constexpr auto hack_read_dynamic_string = [](Hack& self, uptr src, usize size, usize max_len)
+{
+    return hack_read_string(self, src, size ? size : self.find(0, src, max_len));
+};
+
 static constexpr auto hack_write_string = [](Hack& self, uptr dst, const string& data) 
 {
     py::gil_scoped_release release;
@@ -181,6 +184,47 @@ static constexpr auto hack_cheat_engine_save_pointer_scan_file = [](Hack& hack, 
 {
     py::gil_scoped_release release;
     hack.cheat_engine_save_pointer_scan_file(path, addresses, settings, single_file);
+};
+
+static constexpr auto hack_scan_modify_loop = [](Hack& hack, Scan& scan, py::object& callback)
+{
+    py::gil_scoped_release release;
+    self.scan_modify_loop(scan, [&callback]() {
+        py::gil_scoped_acquire acquire_gil;
+        return py::cast<bool>(callback());
+    });
+};
+
+static constexpr auto hack_scan_set_value = [](py::object& self, py::object& value)
+{
+    if (py::isinstance(value, py::globals()["str"])) {
+        scan.set_value(value.cast<string>());
+    }
+    else {
+        auto& scan = self.cast<Hack::Scan&>();
+        u8 buffer[8]{};
+
+        if (py::isinstance(value, py::globals()["int"])) {
+            PGH_ASSERT(scan.value_size <= 8, "Cannot set non-int value with a int");
+            auto v = value.cast<i64>();
+            memcpy(buffer, &v, scan.value_size);
+        }
+        else if (py::isinstance(value, py::globals()["float"])) {
+            PGH_ASSERT(scan.value_size <= 8, "Cannot set non-float value with a float");
+            auto v = value.cast<double>();
+            memcpy(buffer, &v, scan.value_size);
+        }
+        else if (py::isinstance(value, py::globals()["bool"])) {
+            PGH_ASSERT(scan.value_size == 1, "Cannot set non-bool value with a bool");
+            auto v = value.cast<bool>();
+            memcpy(buffer, &v, scan.value_size);
+        }
+        else {
+            PGH_ASSERT(false, "Unrecognized type encountered when setting memory scan value");
+        }
+
+        scan.set_value(scan.type_id(), buffer, scan.value_size);
+    }
 };
 
 //endregion
@@ -397,7 +441,13 @@ void define_process(py::module& m)
             "get_base_address", &Process::get_base_address, 
                 "Get the base address of a given DLL module", 
                 "module_name"_a)
-                
+
+        .def(
+            "follow", process_follow,
+                "Follow a pointer path starting at the given pointer 'begin' with the given offsets.\n" \
+                "NOTE: the first offset in the path will be added to 'begin' before reading.",
+                "begin"_a, "offsets"_a)
+
         .def(
             "iter_regions", process_iter_regions,
                 "Iterate over the memory regions in the process", 
@@ -621,8 +671,9 @@ void define_buffer(py::module& m)
                 "offset"_a, "v"_a)
 
         .def(
-            "read_string", buffer_read_string,
-                "Read the contents of the buffer at the given offset as a string of the given size. If size=0, the buffer is read until the end.",
+            "read_string", buffer_read_dynamic_string,
+                "Read the contents of the buffer at the given offset as a string of the given size. \n"
+                "If size=0, the buffer is read until the first null byte, or until the end of the buffer, whichever comes first.",
                 "offset"_a=0u, "size"_a=0u)
 
         .def(
@@ -661,7 +712,55 @@ void define_buffer(py::module& m)
 }
 
 
-void define_hack(py::module& m)
+void define_hack_scan(py::module& m)
+{
+    py::class_<Hack::Scan> scan_class(m, "MemoryScan");
+    scan_class
+        .def_static("str", [](const string& v, uptr b, usize s, usize m, bool r, bool w, bool e, bool t){ return Hack::Scan(v, b, s, m, r, w, e, t); },
+                "value"_a, "begin"_a, "size"_a, py::kw_only(), "max_results"_a=0,
+                "read"_a=true, "write"_a=false, "execute"_a=false,
+                "regex"_a=false, "threaded"_a=true)
+
+        .def_readwrite("begin", &Hack::Scan::begin,
+            "The start address of the memory region to scan")
+
+        .def_readwrite("size", &Hack::Scan::size,
+            "The size of the memory region to scan")
+
+        .def_readwrite("max_results", &Hack::Scan::max_results,
+            "The maximum number of results returned by the scan (default: 0)")
+
+        .def_readwrite("read", &Hack::Scan::read,
+            "(default: True)")
+
+        .def_readwrite("write", &Hack::Scan::write,
+            "(default: False)")
+
+        .def_readwrite("execute", &Hack::Scan::execute,
+            "(default: False)")
+
+        .def_property_readonly ("regex", [](Hack::Scan& s){ return s.regex; },
+            "If 'regex' is true, then a regex-search will be used for scanning, otherwise will scan for an exact byte-copy of value (default: False).\n"
+            "NOTE: You can only set 'regex=True' when scanning for strings/bytes.")
+
+        .def_readwrite("threaded", &Hack::Scan::threaded,
+            "If 'threaded' is true and the scan is large enough to be worth threading, then a multi-threaded scan will be performed (default: True)")
+
+        .def(
+            "set_value", hack_scan_set_value,
+                "Set the next value to be scanned for in the scan-modify loop",
+                "value"_a);
+
+    #define F(type, name) scan_class \
+        .def_static(name, [](type v, uptr b, usize s, usize m, bool r, bool w, bool e, bool t){ return Hack::Scan(v, b, s, m, r, w, e, t); }, \
+            "value"_a, "begin"_a, "size"_a, py::kw_only(), "max_results"_a=0, \
+            "read"_a=true, "write"_a=false, "execute"_a=false, "threaded"_a=true);
+    FOR_EACH_INT_TYPE(F)
+    #undef F
+}
+
+
+void define_hack_cheat_engine(py::module& m)
 {
     py::class_<Hack::CE::Settings>(m, "CheatEnginePointerScanSettings")
         .def(py::init<>())
@@ -676,7 +775,16 @@ void define_hack(py::module& m)
             "All offsets are 32-byte alligned (default: True)")
         .def_readwrite("ends_with_offsets", &Hack::CE::Settings::ends_with_offsets,
             "List of offsets that every address must end with. (default: [])");
-    
+}
+
+
+void define_hack(py::module& m)
+{
+    define_hack_scan(m);
+
+    define_hack_cheat_engine(m);
+
+    // Hack
     auto& hack_class = py::class_<Hack>(m, "Hack");
 
     hack_class
@@ -701,26 +809,29 @@ void define_hack(py::module& m)
         .def(
             "detach", &Hack::detach, 
                 "Detach from the currently attached process")
-                  
-        .def(
-            "follow", hack_follow, 
-                "Follow a pointer path starting at the given pointer 'begin' with the given offsets.\n" \
-                "If add_first_offset_to_begin=True, then the first offset in the path will be added to 'begin' before reading, otherwise 'begin' is read before the first offset is added.", 
-                "begin"_a, "offsets"_a, "add_first_offset_to_begin"_a=true)
-    
+
         .def(
             "find", hack_find, 
                 "Scan for the given byte in a small memory region starting at 'begin' and spanning 'size' bytes." \
                 "If the value is not found, then '0' is returned, otherwise the address of the value is returned",
                 "value"_a, "begin"_a, "size"_a = 1000u)
-            
+
         .def(
-            "scan", hack_scan_bytes, 
-                "Scan for the given bytes in memory starting at 'begin' and spanning 'size' bytes up to the given max_results.\n" \
-                "If 'regex' is true, then a regex-search will be used for scanning, otherwise will scan for an exact byte-copy of value." \
-                "If 'threaded' is true and the scan is large enough to be worth threading, then a multi-threaded scan will be performed.",
-                "value"_a, "begin"_a, "size"_a, "max_results"_a=0, "regex"_a=false, "threaded"_a=true)
-   
+            "strlen", [](Hack& self, uptr begin, usize size){ return hack_find(self, 0, begin, size); },
+                "Scan for a null byte in a small memory region starting at 'begin' and spanning 'size' bytes." \
+                "If the value is not found, then '0' is returned, otherwise the address of the value is returned",
+                "begin"_a, "max_len"_a = 1000u)
+
+       .def(
+            "scan", hack_scan,
+                "Scan for the given bytes in memory. See 'MemoryScan' for details.",
+                "scan"_a)
+
+       .def(
+            "scan_modify", hack_scan_modify_loop,
+                "Scan in a loop filtering results at every step by the value set in the previous step. See 'MemoryScan' for details.",
+                "scan"_a, "modify_func"_a)
+
         .def(
             "read_buffer", hack_read_buffer,
                 "Read the contents of memory at the given address into the given buffer",
@@ -752,9 +863,10 @@ void define_hack(py::module& m)
                 "dst"_a, "value"_a)
 
         .def(
-            "read_string", hack_read_string, 
-                "Read the contents of memory at the given address as a string of the given size",
-                "src"_a, "size"_a)
+            "read_string", hack_read_dynamic_string,
+                "Read the contents of memory at the given address as a string of the given size.\n"
+                "If 'size=0', then will read until the first null byte, up to a maximum of 'max_len' number of bytes.",
+                "src"_a, "size"_a=0u, "max_len"_a=1000u)
 
         .def(
             "write_string", hack_write_string, 
@@ -765,7 +877,7 @@ void define_hack(py::module& m)
             "read_bytes", [](Hack& self, uptr src, usize size) { return py::bytes(hack_read_string(self, src, size)); },
                 "Read the contents of memory at the given address as a byte-string of the given size",
                 "src"_a, "size"_a)
-                
+
         .def(
             "cheat_engine_load_pointer_scan_file", hack_cheat_engine_load_pointer_scan_file,
                 "Load a CheatEngine PointerScan file from the given path into a list of addresses and corresponding settings for the file.\n" \
@@ -779,14 +891,9 @@ void define_hack(py::module& m)
                 "If 'single_file' is true then it will save all of the pointer scan results into a single file.",
                 "path"_a, "addresses"_a, "settings"_a=Hack::CE::Settings{}, "single_file"_a=true);
 
-    
+
     #define F(type, name) \
     hack_class \
-        .def( \
-            "scan_" name, hack_scan_type<type>, \
-                "Scan for a " name " in memory starting at the given address in the given range up to the given max-results. If max-results=0 then all results will be returned." \
-                "If 'threaded' is true and the scan is large enough to be worth threading, then a multi-threaded scan will be performed.", \
-                "value"_a, "begin"_a, "size"_a, "max_results"_a=0, "threaded"_a=true)\
         .def( \
             "read_" name, &Hack::read_value<type>, \
                 "Read a " name " from the given address", \

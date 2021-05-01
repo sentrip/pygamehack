@@ -2,7 +2,7 @@ from cpygamehack import *
 from .struct import Struct
 from .struct_meta import TypeWrapper, StructType
 from .variable import Variable, ConstVariable, ListVariable, DictVariable
-from .types import String as str, CString as c_str
+from .types import String as str, CString as c_str, Array as arr, CArray as c_arr
 
 __all__ = [
     # cpygamehack
@@ -11,6 +11,7 @@ __all__ = [
     'Hack',
     'Process',
     'Instruction',
+    'MemoryScan',
     'i8', 'i16', 'i32', 'i64',
     'u8', 'u16', 'u32', 'u64',
     'bool', 'float', 'double',
@@ -21,7 +22,7 @@ __all__ = [
     'Variable', 'ConstVariable', 
     'ListVariable', 'DictVariable', 
     # pygamehack types
-    'str', 'c_str'
+    'str', 'c_str', 'arr', 'c_arr'
 ]
 
 
@@ -37,33 +38,5 @@ def _all_processes():
         yield info
 
 Process.all = _all_processes
-
-
-def _strlen(self, address: int, max_size: int = 1000):
-    """
-    Get the length of a string located at the given address
-    """
-    return self.find(0, address, max_size)
-
-Hack.strlen = _strlen
-
-
-def _read_dynamic_string(self, address: int, max_size: int = 1000):
-    """
-    Read a dynamic string from the given address
-    """
-    return self.read_string(address, self.strlen(address, max_size))
-
-Hack.read_dynamic_string = _read_dynamic_string
-
-
-def _read_dynamic_string_ptr(self, address: int, max_size: int = 1000):
-    """
-    Read a dynamic string from the given address
-    """
-    data_address = self.read_ptr(address)
-    return self.read_string(data_address, self.strlen(data_address, max_size))
-
-Hack.read_dynamic_string_ptr = _read_dynamic_string_ptr
 
 #endregion

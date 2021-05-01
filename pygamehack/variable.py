@@ -115,7 +115,7 @@ class IBufferVariable(object):
     """
     __slots__ = ()
 
-    def __init__(self, address: Address, size: int):
+    def __init__(self, address: Optional[Address], size: int, **kwargs):
         super().__init__(address, size)
 
     def get(self) -> buf:
