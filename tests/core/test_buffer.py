@@ -2,7 +2,7 @@ import pygamehack as gh
 
 
 def test_buffer_read_basic(hack, app):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     
     buffer = gh.Buffer(hack, 64)
     buffer.read_from(app.addr.int_types.value, buffer.size)
@@ -32,7 +32,7 @@ def test_buffer_write(hack, app, set_cleanup):
 
     set_cleanup(cleanup)
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     
     buffer = gh.Buffer(hack, 64)
     buffer.read_from(app.addr.int_types.value, buffer.size)
@@ -57,7 +57,7 @@ def test_buffer_write(hack, app, set_cleanup):
 
 
 def test_buffer_read_string(hack, app):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     
     buffer = gh.Buffer(hack, 64)
     buffer.read_from(app.addr.int_types.value, buffer.size)
@@ -74,7 +74,7 @@ def test_buffer_write_string(hack, app, set_cleanup):
 
     set_cleanup(cleanup)
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     
     buffer = gh.Buffer(hack, 64)
     buffer.read_from(app.addr.int_types.value, buffer.size)
@@ -84,7 +84,7 @@ def test_buffer_write_string(hack, app, set_cleanup):
 
 
 def test_buffer_read_buffer(hack, app):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     
     buffer = gh.Buffer(hack, 64)
     other_buffer = gh.Buffer(hack, len("TestString"))
@@ -95,7 +95,7 @@ def test_buffer_read_buffer(hack, app):
 
 
 def test_buffer_write_buffer(hack, app):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     
     buffer = gh.Buffer(hack, 64)
     other_buffer = gh.Buffer(hack, 32)

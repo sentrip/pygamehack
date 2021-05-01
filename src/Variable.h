@@ -40,6 +40,7 @@ template<>
 class Variable<Buffer> {
 public:
     Variable(Address& address, usize size);
+    Variable(VariableBuffer& parent, uptr offset, usize size);
 
     const Address&  address() const;
     Buffer&         get();
@@ -48,16 +49,25 @@ public:
     void            flush(uptr offset = 0, uptr size = 0) const;
     void            reset();
 
+    bool            is_view() const;
+    uptr            offset_in_parent() const;
+    VariableBuffer& parent();
+
 private:
     template<typename T>
     friend class Variable;
 
     static usize clamped_size(uptr offset, usize size, usize buffer_size);
-    static void variable_read(Address& address, uptr offset, u8* value, usize value_size);
-    static void variable_write(Address& address, uptr offset, const u8* value, usize value_size);
+    static uptr get_offset(const Buffer& parent, const Buffer& child);
+    static void variable_read(const Address& address, uptr offset, u8* value, usize value_size);
+    static void variable_write(const Address& address, uptr offset, const u8* value, usize value_size);
 
     Buffer value;
-    Address* _address{};
+    union {
+        Address* _address{};
+        VariableBuffer* _parent;
+    };
+    bool _is_view{};
 };
 
 
@@ -66,6 +76,7 @@ template<>
 class Variable<PtrToBuffer> {
 public:
     Variable(Address& address, usize size);
+    Variable(VariablePtrToBuffer& parent, uptr offset, usize size);
 
     const Address&  address() const;
     Buffer&         get();
@@ -74,9 +85,17 @@ public:
     void            flush(uptr offset = 0, uptr size = 0) const;
     void            reset();
 
+    bool            is_view() const;
+    uptr            offset_in_parent() const;
+    VariablePtrToBuffer& parent();
+
 private:
     Buffer value;
-    Address* _address{};
+    union {
+        Address* _address{};
+        VariablePtrToBuffer* _parent;
+    };
+    bool _is_view{};
 };
 
 

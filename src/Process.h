@@ -74,6 +74,7 @@ public:
 
 	bool is_attached() const;
 
+	bool attach(u32 process_id);
 	bool attach(const string& process_name);
 
     void detach();
@@ -111,7 +112,6 @@ private:
 
     u64 os_api_storage[4]{};
 	module_map _modules{};
-	string name{};
     Arch _arch{Arch::NONE};
 };
 

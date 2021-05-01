@@ -15,6 +15,7 @@ public:
     const Process&      process() const;
 
     // Attach/detach
+    void                attach(u32 process_id);
     void                attach(const string& process_name);
     void                detach();
 

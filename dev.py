@@ -4,8 +4,8 @@ import os, sys
 def compile_test_programs(config, directory):
     os.system(f'mkdir {directory}')
     os.chdir(directory)
-    os.system(f'cmake -A {config} ..')
-    os.system('cmake --build . --target ALL --config Release')
+    os.system(f'cmake -A {config if config == "x64" else "Win32"} ..')
+    os.system('cmake --build . --target TestProgram --config Release')
     os.chdir('../')
 
 

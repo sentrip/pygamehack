@@ -185,6 +185,22 @@ public:
         }
 
         handle = OpenProcess(PROCESS_ALL_ACCESS, NULL, id);
+
+        if (!handle) {
+            id = 0;
+            string msg = string{ "Failed to open process " } + string{ process_name };
+            throw std::exception{ msg.c_str() };
+        }
+    }
+
+	void attach(u32 pid) {
+	    id = pid;
+        handle = OpenProcess(PROCESS_ALL_ACCESS, NULL, id);
+        if (!handle) {
+            id = 0;
+            string msg = string{ "Failed to open process " } + std::to_string(pid);
+            throw std::exception{ msg.c_str() };
+        }
     }
 
     void detach()
@@ -416,9 +432,17 @@ bool Process::is_attached() const
     return API.is_attached();
 }
 
+bool Process::attach(u32 process_id)
+{
+	_modules.clear();
+	API.attach(process_id);
+	_arch = API.is_64_bit() ? Arch::X64 : Arch::X86;
+	API.get_modules(_modules);
+	return API.is_attached();
+}
+
 bool Process::attach(const string& process_name)
 {
-	name = process_name;
 	_modules.clear();
 	API.attach(process_name.c_str());
 	_arch = API.is_64_bit() ? Arch::X64 : Arch::X86;

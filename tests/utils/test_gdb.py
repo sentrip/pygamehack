@@ -12,7 +12,7 @@ def gdb_path():
 
 @pytest.mark.skip
 def test_gdb(hack, app, gdb_path):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     
     gdb = GDB(gdb_path)
     

@@ -6,22 +6,23 @@ import pygamehack as gh
 
 
 def test_hack_attach(hack, app):
-    hack.attach(app.program_name)
-    assert hack.process.attached
-    assert hack.process.pid > 0
-    assert hack.process.arch == (gh.Process.Arch.x64 if app.arch == 64 else gh.Process.Arch.x86)
-    hack.detach()
-    assert not hack.process.attached
+    for item in [app.pid, app.program_name]:
+        hack.attach(item)
+        assert hack.process.attached
+        assert hack.process.pid == app.pid
+        assert hack.process.arch == (gh.Process.Arch.x64 if app.arch == 64 else gh.Process.Arch.x86)
+        hack.detach()
+        assert not hack.process.attached
 
 
 def test_hack_protect(hack, app):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     with hack.process.protect(app.addr.marker, 4):
         assert hack.read_u32(app.addr.marker) == app.marker_value
 
 
 def test_hack_read_basic(hack, app):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     assert hack.read_u32(app.addr.marker) == app.marker_value
     assert hack.read_i8( app.addr.int_types.value +  0) == -15
     assert hack.read_i16(app.addr.int_types.value +  2) == -300
@@ -34,7 +35,7 @@ def test_hack_read_basic(hack, app):
 
 
 def test_hack_write_basic(hack, app, set_cleanup):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     hack.write_i8( app.addr.int_types.value +  0, -15 + 5)
     hack.write_i16(app.addr.int_types.value +  2, -300 + 5)
     hack.write_i32(app.addr.int_types.value +  4, -2100000000 + 5)
@@ -67,13 +68,13 @@ def test_hack_write_basic(hack, app, set_cleanup):
 
 
 def test_hack_read_string(hack, app):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     assert hack.read_string(app.addr.str_types.value, len("TestString")) == "TestString"
     assert hack.read_bytes(app.addr.str_types.value, len("TestString")) == b"TestString"
 
 
 def test_hack_write_string(hack, app, set_cleanup):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     
     hack.write_string(app.addr.str_types.value, "StringTest")
     
@@ -86,7 +87,7 @@ def test_hack_write_string(hack, app, set_cleanup):
 
 
 def test_hack_read_buffer(hack, app):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     
     buffer = gh.Buffer(hack, len("TestString"))
     hack.read_buffer(app.addr.str_types.value, buffer)
@@ -94,7 +95,7 @@ def test_hack_read_buffer(hack, app):
 
 
 def test_hack_write_buffer(hack, app, set_cleanup):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     
     buffer = gh.Buffer(hack, len("StringTest"))
     buffer.write_string(0, "StringTest")
@@ -110,13 +111,13 @@ def test_hack_write_buffer(hack, app, set_cleanup):
 
 
 def test_hack_read_ptr(hack, app):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     address = hack.read_ptr(app.addr.ptr_types.marker)
     assert hack.read_u32(address) == app.marker_value
 
 
 def test_hack_write_ptr(hack, app, set_cleanup):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     
     address = hack.read_ptr(app.addr.ptr_types.marker)
     hack.write_ptr(app.addr.ptr_types.marker, address + 4)
@@ -130,7 +131,7 @@ def test_hack_write_ptr(hack, app, set_cleanup):
 
 
 def test_hack_find(hack, app):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
 
     assert hack.find(-15, app.addr.int_types.value, 32) == 0
     assert hack.find(15, app.addr.int_types.value, 32) == 16
@@ -138,7 +139,7 @@ def test_hack_find(hack, app):
 
 
 def test_hack_scan_type(hack, app):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
 
     results = hack.scan_u32(app.marker_value, app.addr.int_types.value - 100000, 32 + 10000000, 1)
     assert len(results) == 1

@@ -1,6 +1,6 @@
 from cpygamehack import *
 from .struct import Struct
-from .struct_meta import TypeHintContainer, StructType
+from .struct_meta import TypeWrapper, StructType
 from .variable import Variable, ConstVariable, ListVariable, DictVariable
 from .types import String as str, CString as c_str
 
@@ -17,7 +17,7 @@ __all__ = [
     'ptr', 'buf', 'p_buf',
     'int', 'uint', 'usize',
     # pygamehack
-    'Struct', 'TypeHintContainer', 'StructType',
+    'Struct', 'TypeWrapper', 'StructType',
     'Variable', 'ConstVariable', 
     'ListVariable', 'DictVariable', 
     # pygamehack types

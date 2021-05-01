@@ -18,6 +18,6 @@ def test_code_scanner(hack, app, code):
     entry = gh.Process.entry_point('tests\\' + app.program_name)
     print(entry)
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     r = code.scan_in_process(hack)
     print(r.address, r.offset, r.offset - entry)

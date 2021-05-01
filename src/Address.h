@@ -3,6 +3,7 @@
 #define PYGAMEHACK_ADDRESS_H
 
 #include "config.h"
+#include <algorithm>
 #include <vector>
 
 namespace pygamehack {

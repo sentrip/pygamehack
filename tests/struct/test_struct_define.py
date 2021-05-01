@@ -36,7 +36,7 @@ def test_define_struct(hack, app, cleanup_struct_types):
     assert n.size == 32
     assert t.size == 48
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
 
     assert t.marker  == app.marker_value
     assert n.num_i8  == -15
@@ -79,7 +79,7 @@ def test_define_struct_string_forward_declaration(hack, app, cleanup_struct_type
     assert n.size == 32
     assert t.size == 48
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
 
     assert t.marker  == app.marker_value
     assert n.num_i8  == -15
@@ -117,7 +117,7 @@ def test_define_struct_unnamed_buffer(hack, app, cleanup_struct_types):
         
     gh.Struct.define_types(app.arch)
     
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     
     t = TestProgram(gh.Address(hack, app.addr.marker))
     
@@ -144,7 +144,7 @@ def test_define_struct_inline_string(hack, app, cleanup_struct_types):
 
     gh.Struct.define_types(app.arch)
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     t = TestProgram(gh.Address(hack, app.addr.marker))
     
     assert t.size == 80
@@ -164,9 +164,9 @@ def test_define_nested_ptr(hack, app, cleanup_struct_types):
 
 def test_user_defined_struct_type(hack, app, cleanup_struct_types):
 
-    class Wrapper(metaclass=gh.TypeHintContainer):
+    class Wrapper(metaclass=gh.TypeWrapper):
         @classmethod
-        def get_container_type(mcs, t):
+        def get_type(mcs, t):
             return gh.StructType(t)
 
     class TestProgram(gh.Struct):
@@ -174,7 +174,7 @@ def test_user_defined_struct_type(hack, app, cleanup_struct_types):
 
     gh.Struct.define_types(app.arch)
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     ts = TestProgram(gh.Address(hack, app.addr.marker))
 
     assert ts.size == 4

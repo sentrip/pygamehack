@@ -1,5 +1,7 @@
 import pygamehack as gh
 
+# TODO: Test struct read/write with all things
+
 
 def test_struct_read_basic(hack, app, test_program_types):
     n = test_program_types.IntTypes(gh.Address(hack, app.addr.int_types.value))
@@ -8,7 +10,7 @@ def test_struct_read_basic(hack, app, test_program_types):
     assert n.size == 32
     assert t.size == 48
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
 
     assert t.marker  == app.marker_value
     assert n.num_i8  == -15
@@ -29,15 +31,15 @@ def test_struct_read_buffer(hack, app, test_program_types):
     assert n.size == 32
     assert t.size == 48
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     
     assert t.marker  == 0
     
-    t.read_contents()
+    t.read()
 
     assert t.marker  == app.marker_value
 
-    n.read_contents()
+    n.read()
 
     assert n.num_i8  == -15
     assert n.num_i16 == -300

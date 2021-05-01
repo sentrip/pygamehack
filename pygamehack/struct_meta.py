@@ -1,5 +1,6 @@
 import inspect
 from abc import ABCMeta, abstractmethod
+from typing import Union
 import cpygamehack as cgh
 
 
@@ -32,6 +33,8 @@ class StructMeta(ABCMeta):
 
         gh.StructMeta.define_types()
     """
+
+    size = 0
 
     _to_define = []
     _defined = {}
@@ -83,11 +86,11 @@ class StructMeta(ABCMeta):
         StructMeta._dependencies.clear()
 
     @staticmethod
-    def is_struct(struct):
-        return hasattr(struct, '__is_struct_type') or hasattr(struct.__class__, '__is_struct_type')
+    def is_struct(cls):
+        return hasattr(cls, '__is_struct_type') or hasattr(cls.__class__, '__is_struct_type')
 
     @staticmethod
-    def struct(cls):
+    def struct(cls: 'StructMeta'):
         return StructMeta._defined.get(cls, None)
 
     @staticmethod
@@ -116,6 +119,23 @@ class StructMeta(ABCMeta):
                         yield gk, gv, gp
 
         return _recurse(None, struct, None)
+
+    @staticmethod
+    def check_buffer_view_kwargs(address, kwargs):
+        if address is None:
+            if not kwargs.get('buffer', False):
+                raise RuntimeError('You must either create a Struct with an address or the following kwargs:\n'
+                                   "\t'buffer': bool = True\n"
+                                   "\t'parent_buffer': buf = <parent>\n"
+                                   "\t'offset_in_parent': <offset_in_parent>")
+            if 'parent_buffer' not in kwargs:
+                raise RuntimeError("Buffer view kwargs missing 'parent_buffer': Buffer")
+            if 'offset_in_parent' not in kwargs:
+                raise RuntimeError("Buffer view kwargs missing 'offset_in_parent': int")
+            return True
+        elif kwargs.get('buffer', False) and ('parent_buffer' in kwargs or 'offset_in_parent' in kwargs):
+            raise RuntimeError("You must either provide an address, or buffer view kwargs, not both")
+        return False
 
     # Called when a new TYPE is DEFINED (before anything interesting happens)
     def __new__(mcs, name, bases, attrs, **kwargs):
@@ -148,8 +168,8 @@ class StructMeta(ABCMeta):
             cls.__repr__ = StructMethods.repr
             cls.read = StructMethods.read
             cls.write = StructMethods.write
-            cls.read_contents = StructMethods.read_contents
-            cls.write_contents = StructMethods.write_contents
+            cls.flush = StructMethods.flush
+            cls.reset = StructMethods.reset
             cls.dataclass = lambda **kw: StructData.create(cls, **kw)
 
         super().__init__(name, bases, attrs, **kwargs)
@@ -298,8 +318,7 @@ class StructMethods(object):
         self.variables = {}
         is_buffer_type = kwargs.get('buffer', False)
 
-        if address is None:
-            StructMethods._check_buffer_view_kwargs(kwargs)
+        StructMeta.check_buffer_view_kwargs(address, kwargs)
 
         struct = StructMeta.struct(self.__class__)
         if struct is None:
@@ -311,9 +330,9 @@ class StructMethods(object):
 
         if is_buffer_type:
             if 'offset_in_parent' in kwargs:
-                self.buffer = cgh.Buffer(kwargs['parent_buffer'], kwargs['offset_in_parent'], struct.size)
+                self.buffer = cgh.buf(kwargs['parent_buffer'], kwargs['offset_in_parent'], struct.size)
             else:
-                self.buffer = cgh.Buffer(address.hack, struct.size)
+                self.buffer = cgh.buf(address, struct.size)
 
         else:
             kwargs['parent_buffer'] = getattr(self, 'buffer', None)
@@ -323,6 +342,9 @@ class StructMethods(object):
 
     @staticmethod
     def read(self):
+        if hasattr(self, 'buffer'):
+            # TODO: Read nested buffers
+            self.buffer.get().read_from(self.address.value)
         return self
 
     @staticmethod
@@ -341,8 +363,8 @@ class StructMethods(object):
 
         # Struct<Buffer> = Struct<Buffer>
         if value_buffer is not None:
-            assert self_buffer.size == value_buffer.size, "Setting a buffer struct with a buffer struct of a different size"
-            self_buffer.write(value_buffer)
+            assert self_buffer.get().size == value_buffer.get().size, "Setting a buffer struct with a buffer struct of a different size"
+            self_buffer.write(value_buffer.get())
 
         # Struct<Buffer> = [Struct, StructData]
         else:
@@ -359,31 +381,26 @@ class StructMethods(object):
                         setattr(self, k, v)
 
     @staticmethod
-    def read_contents(self):
-        self.buffer.read_from(self.address.value)
-        return self
+    def flush(self):
+        if not hasattr(self, 'buffer'):
+            raise RuntimeError("'write_contents' can only be called on structs created with 'buffer=True'")
+        # TODO: Write nested buffers
+        self.buffer.get().write_to(self.address.value)
 
     @staticmethod
-    def write_contents(self):
-        self.buffer.write_to(self.address.value)
+    def reset(self):
+        buffer = getattr(self, 'buffer', None)
+        if buffer is not None:
+            buffer.clear()
+        else:
+            for v in self.variables.items():
+                v.reset()
 
     @staticmethod
     def repr(self):
         if getattr(self, 'address', None) is None:
             return self.__class__.__name__
         return f'{self.__class__.__name__}({cgh.Address.make_string(self.address.value, self.address.hack.process.arch)})'
-
-    @staticmethod
-    def _check_buffer_view_kwargs(kwargs):
-        if kwargs.get('buffer', False):
-            raise RuntimeError('You must either create a Struct with an address or the following kwargs:\n'
-                               "\t'buffer': bool = True\n"
-                               "\t'parent_buffer': Buffer = <parent>\n"
-                               "\t'offset_in_parent': <offset_in_parent>")
-        if 'parent_buffer' not in kwargs:
-            raise RuntimeError("Buffer view kwargs missing 'parent_buffer': Buffer")
-        if 'offset_in_parent' not in kwargs:
-            raise RuntimeError("Buffer view kwargs missing 'offset_in_parent': int")
 
 
 # endregion
@@ -396,8 +413,8 @@ class StructType(object):
 
     def __init__(self, t, element_size=LAZY_SIZE, element_count=1, detect_type=True, *, container_type=None):
         self.type = t if not detect_type else StructType.detect(t)
-        self.is_basic = StructType.is_basic_type(t)
         self.is_container = container_type is not None
+        self.is_basic = StructType.is_basic_type(t) and not self.is_container
         self.is_pointer = element_size == cgh.ptr.Tag
         self.is_buffer_class = StructType.is_buffer_subclass(t)
         self.element_size = StructType.LAZY_SIZE if self.is_pointer else element_size
@@ -405,18 +422,26 @@ class StructType(object):
         self.container_type = container_type
 
     def __call__(self, *args, **kwargs):
-        if self.is_buffer_class:
-            return self.type(*args, self.element_size)
-        elif self.is_container:
-            return self.container_type(self.type, *args, **kwargs)
-        elif StructType.is_basic_type(self.type):
-            return self.type(*args)
-        else:
-            return self.type(*args, **kwargs)
+        t = self.type
+
+        if self.is_container:
+            kwargs['type'] = self.type
+            t = self.container_type
+            args = (*args, self.element_count)
+
+        elif self.is_buffer_class:
+            args = (*args, self.element_size)
+
+        return t(*args, **kwargs)
 
     @property
     def __name__(self):
-        return self.type if isinstance(self.type, str) else self.type.__name__
+        if isinstance(self.type, str):
+            return StructType.from_string(self.type).name
+        elif isinstance(self.type, StructType):
+            return self.type.name
+        else:
+            return self.type.__name__
 
     @property
     def size(self):
@@ -431,13 +456,25 @@ class StructType(object):
     @property
     def name(self):
         if self.is_pointer:
-            return f'ptr[{self.type.__name__}]'
+            return f'ptr[{self.__name__}]'
+        elif self.is_container:
+            if self.element_count > 1:
+                return f'{self.container_type.__name__}[{self.__name__}, {self.element_count}]'
+            else:
+                return f'{self.container_type.__name__}[{self.__name__}]'
         else:
-            return self.type.__name__
+            return self.__name__
 
     @staticmethod
     def is_buffer_subclass(cls):
-        return cls is cgh.buf or (isinstance(cls, type) and issubclass(cls, cgh.buf))
+        if isinstance(cls, StructType):
+            return cls.is_buffer_class
+        else:
+            return cls is cgh.buf or (isinstance(cls, type) and issubclass(cls, cgh.buf))
+
+    @staticmethod
+    def is_compound_type_tuple(typ: tuple):
+        return len(typ) == 2 and (typ[1] == cgh.ptr.Tag or StructType.is_buffer_subclass(typ[0]))
 
     @staticmethod
     def is_primitive_class(cls):
@@ -460,14 +497,7 @@ class StructType(object):
     def detect(typ):
         # Forward definition
         if isinstance(typ, str):
-            # Forward defined basic type
-            if StructType.is_basic_type(typ):
-                t = getattr(cgh, typ)
-                return StructType(t, t.size, 1, False)
-            # Forward defined Struct
-            else:
-                t = StructMeta.named(typ).cls
-                return StructType(t, t.size, 1)
+            return StructType.from_string(typ)
         # Compound type from cpygamehack
         elif isinstance(typ, tuple):
             return StructType.from_tuple(typ)
@@ -487,16 +517,36 @@ class StructType(object):
 
     @staticmethod
     def from_tuple(typ: tuple):
-        if len(typ) == 2:
-            t, size = typ
-            if not isinstance(size, int):
-                raise RuntimeError('StructType tuple must be in the form tuple(type: Any, size: int)')
-            return StructType(t, size, 1, not StructType.is_basic_type(t))
-        elif len(typ) == 3:
-            c, t, size = typ
-            if not isinstance(size, int):
-                raise RuntimeError('StructType tuple must be in the form tuple(container: Any, type: Any, size: int)')
-            return StructType(t, StructType.LAZY_SIZE, size, not StructType.is_basic_type(t))
+        if not isinstance(typ, tuple) \
+                or len(typ) != 2 \
+                or not isinstance(typ[1], int):
+            raise RuntimeError('StructType tuple must be in the form tuple(type: Any, size: int)')
+
+        t, size = typ
+
+        # Pointer to buffer
+        if size == cgh.ptr.Tag \
+                and StructType.is_buffer_subclass(t):
+            raise RuntimeError('Forgot to provide size in buffer field')
+        # Empty/un-sized buffer/buffer of pointers?
+        elif StructType.is_buffer_subclass(t) \
+                and (not size or size == cgh.ptr.Tag):
+            raise RuntimeError('Forgot to provide size in buffer field')
+
+        return StructType(t, size, 1, not StructType.is_basic_type(t))
+
+    @staticmethod
+    def from_string(typ: str):
+        # Forward defined basic type
+        if StructType.is_basic_type(typ):
+            t = getattr(cgh, typ)
+            return StructType(t, t.size, 1, False)
+        # Forward defined Struct
+        else:
+            t = StructMeta.named(typ)
+            if t is None:
+                raise RuntimeError(f"Undefined struct used in forward declaration: '{typ}'")
+            return StructType(t.cls, t.cls.size, 1)
 
 
 # endregion
@@ -511,6 +561,9 @@ class StructLazyField(object):
     def __repr__(self):
         return f'LazyField[{self.field}]'
 
+    def __bool__(self):
+        return False
+
 
 class StructField(object):
     def __init__(self, name, typ, struct, index):
@@ -518,8 +571,6 @@ class StructField(object):
         self.struct = struct
         self.index = index
         self.type = StructType.detect(typ)
-        # self.type = StructTypez.detect(typ)
-        # self.method_suffix = self.type.type_name
         self.method_suffix = self.type.__name__
 
     @property
@@ -581,7 +632,7 @@ class StructField(object):
         variable = instance.variables.get(self.name, None)
         if is_buffer_type and not variable:
             offset = self.struct.offsets[self.name][0]
-            method = getattr(instance.buffer, f'read_{self.method_suffix}')
+            method = getattr(instance.buffer.get(), f'read_{self.method_suffix}')
             return lambda i: method(offset)
         return StructField.create_variable_getter(variable, is_buffer_type)
 
@@ -590,7 +641,7 @@ class StructField(object):
         variable = instance.variables.get(self.name, None)
         if is_buffer_type and not variable:
             offset = self.struct.offsets[self.name][0]
-            method = getattr(instance.buffer, f'write_{self.method_suffix}')
+            method = getattr(instance.buffer.get(), f'write_{self.method_suffix}')
             return lambda i, v: method(offset, v)
         return StructField.create_variable_setter(variable)
 
@@ -675,23 +726,23 @@ class StructProperty(property):
 
 # endregion
 
-# region TypeHintContainer
+# region TypeWrapper
 
-class TypeHintContainer(type):
+class TypeWrapper(type):
     """
     Metaclass used to create a helper for defining types that require other types and a size -> List[uint, 8]
 
     Usage:
         import pygamehack as gh
 
-        class Wrapper(metaclass=gh.TypeHintContainer):
+        class Wrapper(metaclass=gh.TypeWrapper):
             @classmethod
-            def get_container_type(mcs, t):
+            def get_type(mcs, t):
                 return gh.StructType(t)
 
-        class List(metaclass=gh.TypeHintContainer):
+        class List(metaclass=gh.TypeWrapper):
             @classmethod
-            def get_container_type(mcs, t):
+            def get_type(mcs, t):
                 return gh.StructType(t[0], element_size=StructType.LAZY_SIZE, element_count=t[1])
 
         class MyStruct(metaclass=gh.Struct):
@@ -701,16 +752,16 @@ class TypeHintContainer(type):
 
     @classmethod
     @abstractmethod
-    def get_container_type(mcs, t):
+    def get_type(mcs, t):
         raise NotImplementedError
 
     def __getitem__(cls, t):
-        return cls.get_container_type(t)
+        return cls.get_type(t)
 
     # Called when a new TYPE is INSTANTIATED (where TYPE is defined, after this you can make instances of the TYPE)
     def __init__(cls, name, bases, attrs, **kwargs):
-        assert hasattr(cls, 'get_container_type'), \
-            f"Did not define the 'get_container_type' classmethod on '{cls.__name__}'"
+        assert hasattr(cls, 'get_type'), \
+            f"Did not define the 'get_type' classmethod on '{cls.__name__}'"
         super().__init__(name, bases, attrs, **kwargs)
 
 

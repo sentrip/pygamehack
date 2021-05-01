@@ -55,6 +55,7 @@ def app(arch, program, program_name, marker_address):
     
     a = Dummy()
     a.arch = arch
+    a.pid = program.pid
     a.program_name = program_name
     a.program = program
     a.marker_value = 1234567898

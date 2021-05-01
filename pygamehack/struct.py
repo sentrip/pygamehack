@@ -50,10 +50,6 @@ class Struct(ABC, metaclass=StructMeta):
 
         gh.Struct.define_types()
     """
-    
-    size = 0
-    _info = StructInfo()
-
     @staticmethod
     def define_types(arch: int):
         StructMeta.define_types(arch)
@@ -63,21 +59,29 @@ class Struct(ABC, metaclass=StructMeta):
         StructMeta.clear_types()
 
     @staticmethod
-    def is_struct(struct):
-        return StructMeta.is_struct(struct)
+    def is_struct(o: Union['Struct', StructMeta]):
+        return StructMeta.is_struct(o)
 
     @staticmethod
-    def iter_variables(struct):
+    def iter_variables(struct: 'Struct'):
         return StructMeta.iter_variables(struct)
 
     @staticmethod
-    def walk(struct):
+    def walk(struct: 'Struct'):
         return StructMeta.walk(struct)
+
+    # These definitions are never used, they are provided for documentation purposes
+
+    size = 0
+    _info = StructInfo()
 
     def __init__(self, address: Optional[Address], *args, **kwargs):
         raise NotImplementedError
 
     def dataclass(self, **properties) -> StructData:
+        raise NotImplementedError
+
+    def get(self) -> 'Struct':
         raise NotImplementedError
 
     def read(self) -> 'Struct':
@@ -86,8 +90,8 @@ class Struct(ABC, metaclass=StructMeta):
     def write(self, value: Union['Struct', StructData]):
         raise NotImplementedError
 
-    def read_contents(self) -> 'Struct':
+    def flush(self):
         raise NotImplementedError
 
-    def write_contents(self):
+    def reset(self):
         raise NotImplementedError

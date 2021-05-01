@@ -16,7 +16,7 @@ def test_code_finder(hack, app, set_cleanup):
 
     gh.Struct.define_types(app.arch)
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
 
     t = TestProgram(gh.Address(hack, app.addr.marker))
     getattr(t, 'update')

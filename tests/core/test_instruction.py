@@ -1,6 +1,8 @@
+import pytest
 import pygamehack as gh
 
 
+@pytest.mark.skip
 def test_instruction_iter():
     raw = b'Rj\x00Q\xff\xd0\x83\xc4\x10\xc7C\x14\x01\x00\x00\x00\xc7CH\x00\x00\x00\x00\x8bC@\x8bS\x08\x8b\x00\xc3'
     

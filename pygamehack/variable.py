@@ -6,7 +6,6 @@ from .struct import Struct
 
 
 __all__ = [
-    'Address', 'buf',
     'IVariable', 'IConstVariable', 'IContainerVariable', 'IListVariable', 'IDictVariable',
     'IBufferVariable', 'IBufferContainerVariable',
     'Variable', 'ConstVariable', 'ContainerVariable', 'ListVariable', 'DictVariable'
@@ -46,10 +45,10 @@ class IConstVariable(object):
         class CMyFancyVariable(ConstVariable, MyFancyVariable):
             pass
     """
-    def write(self, value):
+    def flush(self):
         raise RuntimeError('Cannot write to a constant variable')
 
-    def write_contents(self):
+    def write(self, value):
         raise RuntimeError('Cannot write to a constant variable')
 
     def __setitem__(self, key, value):
@@ -66,15 +65,12 @@ class IContainerVariable(IVariable):
     def get(self) -> 'IContainerVariable':
         return self
 
-    def read(self) -> 'IContainerVariable':
-        return self
-
     @abstractmethod
-    def read_contents(self):
+    def read(self) -> 'IContainerVariable':
         raise NotImplementedError
 
     @abstractmethod
-    def write_contents(self):
+    def flush(self):
         raise NotImplementedError
 
     @abstractmethod
@@ -131,11 +127,11 @@ class IBufferVariable(object):
     def write(self, value):
         buf.write(self, value)
 
-    def read_contents(self):
-        buf.read(self)
-
-    def write_contents(self):
+    def flush(self):
         buf.flush(self)
+
+    def reset(self):
+        buf.get(self).clear()
 
     def __init_subclass__(cls, **kwargs):
         def check_bases(c):

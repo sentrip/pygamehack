@@ -9,7 +9,7 @@ def test_address_manual(hack, app):
     assert addr.value == app.addr.marker
     assert not addr.valid
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
 
     assert addr.valid
 
@@ -22,7 +22,7 @@ def test_address_static(hack, app):
     assert addr.value == 0
     assert not addr.valid
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     loaded_addr = addr.load()
 
     assert loaded_addr == app.addr.marker
@@ -33,14 +33,14 @@ def test_address_static(hack, app):
 
 def test_address_dynamic(hack, app):
     static_addr = gh.Address(hack, app.program_name, app.addr.entry_offset + (app.addr.ptr_types.marker - app.addr.marker))
-    addr = gh.Address(static_addr, [0])
+    addr = gh.Address(static_addr, [0], False)
     
     assert addr.type == gh.Address.Type.Dynamic
     assert not addr.loaded
     assert addr.value == 0
     assert not addr.valid
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     static_addr.load()
     loaded_addr = addr.load()
 
@@ -59,7 +59,7 @@ def test_address_dynamic_add_first_offset_to_parent(hack, app):
     assert addr.value == 0
     assert not addr.valid
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
     static_addr.load()
     loaded_addr = addr.load()
 

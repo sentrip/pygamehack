@@ -460,7 +460,7 @@ void define_address(py::module& m)
                 "Create a dynamic address from the given parent address and offset path. " \
                 "If 'add_first_offset_to_parent_address' is 'True', then the first offset in the path will be added to the parent address before the first read." \
                 "Otherwise the parent address is read first and the first offset in the path is added to the resulting address read from the parent address.",
-                "parent"_a, "offsets"_a, "add_first_offset_to_parent_address"_a=false)
+                "parent"_a, "offsets"_a, "add_first_offset_to_parent_address"_a=true)
 
         .def_property_readonly(
             "hack", &Address::hack, py::return_value_policy::reference,
@@ -542,9 +542,17 @@ void define_address(py::module& m)
 
 void define_buffer(py::module& m)
 {    
-    py::class_<Buffer> buffer_class(m, "Buffer");
+    py::class_<Buffer> buffer_class(m, "Buffer", py::buffer_protocol());
     
     define_python_copy<Buffer>(buffer_class);
+
+    buffer_class.def_buffer([](Buffer &b) -> py::buffer_info {
+        return py::buffer_info(
+            b.data(),                                // Pointer to buffer
+            { py::ssize_t(b.size()) },               // Buffer dimensions
+            { 1 }                                    // Stride (in bytes) for each dimension
+        );
+     });
 
     buffer_class
         .def("__repr__", buffer_tostring)
@@ -681,10 +689,15 @@ void define_hack(py::module& m)
                 "The process used by the hack")
         
         .def(
-            "attach", &Hack::attach, 
-                "Attach to a running process", 
+            "attach", (void(Hack::*)(u32))&Hack::attach,
+                "Attach to a process with the given process id",
+                "process_id"_a)
+
+      .def(
+            "attach", (void(Hack::*)(const string&))&Hack::attach,
+                "Attach to a process with the given process name",
                 "process_name"_a)
-      
+
         .def(
             "detach", &Hack::detach, 
                 "Detach from the currently attached process")
@@ -810,19 +823,24 @@ void define_variable(py::module& m, const char(&type_name)[N])
             py::init<Address&>(), py::keep_alive<2, 1>(),
                 "Create a variable from the given address",
                 "address"_a)
+
         .def_property_readonly(
             "address", &Variable<T>::address, py::return_value_policy::reference,
                 "Return the address associated to this variable")
+
         .def(
             "get", &Variable<T>::get,
                 "Return the stored variable")
+
         .def(
             "read", &Variable<T>::read,
                 "Read into local storage from the memory at the address of this variable and return the stored variable")
+
         .def(
             "write", &Variable<T>::write,
                 "Write to local storage and to the memory at the address of this variable from the given value",
                 "value"_a)
+
         .def(
             "reset", &Variable<T>::reset,
                 "Reset the value of the local storage to the default value when originally constructed");
@@ -843,9 +861,17 @@ void define_variable(py::module& m, const char(&type_name)[N])
 template<typename T, usize N>
 void define_variable_buffer(py::module& m, const char(&type_name)[N])
 {
-    py::class_<T> variable_class(m, type_name);
+    py::class_<T> variable_class(m, type_name, py::buffer_protocol());
 
     define_class_getitem_pass_type_args<T>(variable_class);
+
+    variable_class.def_buffer([](T &v) -> py::buffer_info {
+        return py::buffer_info(
+            v.get().data(),                          // Pointer to buffer
+            { py::ssize_t(v.get().size()) },         // Buffer dimensions
+            { 1 }                                    // Stride (in bytes) for each dimension
+        );
+     });
 
     variable_class
         .def("__repr__", variable_tostring<T>)
@@ -854,27 +880,51 @@ void define_variable_buffer(py::module& m, const char(&type_name)[N])
             py::init<Address&, usize>(), py::keep_alive<2, 1>(),
                 "Create a buffer variable of the given size from the given address",
                 "address"_a, "size"_a)
+
+       .def(
+            py::init<T&, uptr, usize>(), py::keep_alive<2, 1>(),
+                "Create a buffer view variable of the given size from the given parent buffer",
+                "parent"_a, "offset"_a, "size"_a)
+
         .def_property_readonly(
             "address", &T::address, py::return_value_policy::reference,
                 "Return the address associated to this variable")
+
+        .def_property_readonly(
+            "is_view", &T::is_view,
+                "Is this variable a view into another variable")
+
+        .def_property_readonly(
+            "offset_in_parent", &T::offset_in_parent,
+                "Return the offset of this variables address with respect to the parent variable")
+
+        .def_property_readonly(
+            "parent", &T::parent, py::return_value_policy::reference,
+                "Return the parent variable if this variable is a buffer view. Raises error for non-view variables.")
+
         .def(
             "get", &T::get, py::return_value_policy::reference,
                 "Return the stored buffer")
+
         .def(
             "read", &T::read, py::return_value_policy::reference,
                 "Read into local storage from the memory at the address of this variable and return the stored buffer. If size=0, the entire buffer is read.",
                 "offset"_a=0, "size"_a=0)
+
         .def(
             "write", &T::write,
                 "Write to local storage at the given offset from the given buffer",
                 "value"_a, "offset"_a=0u)
+
         .def(
             "flush", &T::flush,
                 "Write to the memory at the address of this variable from local storage. If size=0, the entire buffer is written.",
                 "offset"_a=0, "size"_a=0)
+
         .def(
             "reset", &T::reset,
                 "Clear the memory of the local storage buffer");
+
 }
 
 

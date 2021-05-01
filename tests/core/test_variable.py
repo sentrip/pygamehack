@@ -1,10 +1,8 @@
-import pytest
 import pygamehack as gh
 
 # TODO: Test pointer variable
 # TODO: Test usize variable
 # TODO: Test nested buffer read/write
-# TODO: Test struct read/write with all things
 
 
 def test_buffer_variable_getitem():
@@ -13,7 +11,7 @@ def test_buffer_variable_getitem():
 
 
 def test_variable_basic_read(hack, app):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
 
     assert gh.i8( gh.Address(hack, app.addr.int_types.value +  0)).read() == -15
     assert gh.i16(gh.Address(hack, app.addr.int_types.value +  2)).read() == -300
@@ -26,7 +24,7 @@ def test_variable_basic_read(hack, app):
 
 
 def test_variable_basic_write(hack, app, set_cleanup):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
 
     gh.i8( gh.Address(hack, app.addr.int_types.value +  0)).write(-15 + 5)
     gh.i16(gh.Address(hack, app.addr.int_types.value +  2)).write(-300 + 5)
@@ -60,7 +58,7 @@ def test_variable_basic_write(hack, app, set_cleanup):
 
 
 def test_variable_buffer_read(hack, app):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
 
     variable = gh.buf(gh.Address(hack, app.addr.int_types.value), 32)
 
@@ -92,7 +90,7 @@ def test_variable_buffer_write(hack, app, set_cleanup):
 
     set_cleanup(cleanup)
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
 
     variable = gh.buf(gh.Address(hack, app.addr.int_types.value), 32)
 
@@ -122,7 +120,7 @@ def test_variable_buffer_write(hack, app, set_cleanup):
 
 
 def test_variable_ptr_to_buffer_read(hack, app):
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
 
     variable = gh.p_buf(gh.Address(hack, app.addr.ptr_types.marker), 32)
 
@@ -142,7 +140,7 @@ def test_variable_ptr_to_buffer_write(hack, app, set_cleanup):
 
     set_cleanup(cleanup)
 
-    hack.attach(app.program_name)
+    hack.attach(app.pid)
 
     variable = gh.p_buf(gh.Address(hack, app.addr.ptr_types.marker), 32)
 
@@ -160,32 +158,3 @@ def test_variable_ptr_to_buffer_write(hack, app, set_cleanup):
     
     assert buffer.read_u32( 0) == 10
     assert buffer.read_u32( 4) == 20
-
-
-def test_variable_str_read(hack, app):
-    hack.attach(app.program_name)
-
-    variable = gh.str(gh.Address(hack, app.addr.int_types.value + 32), 32)
-
-    assert variable.read() == "TestString"
-
-
-def test_variable_str_write(hack, app, set_cleanup):
-    def cleanup():
-        variable.write("TestString")
-        variable.write_contents()
-
-    set_cleanup(cleanup)
-
-    hack.attach(app.program_name)
-
-    variable = gh.str(gh.Address(hack, app.addr.int_types.value + 32), 32)
-
-    variable.write("StringTest")
-
-    variable.write_contents()
-
-    assert variable.read() == "StringTest"
-
-    with pytest.raises(RuntimeError):
-        variable.write("0" * 100)

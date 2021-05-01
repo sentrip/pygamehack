@@ -173,6 +173,13 @@ const Process& Hack::process() const
     return _process;
 }
 
+void Hack::attach(u32 process_id)
+{
+    if (!_process.attach(process_id)) {
+        std::cerr << "Failed to attach to process: " << process_id << "\n";
+    }
+}
+
 void Hack::attach(const string& process_name)
 {
     if (!_process.attach(process_name)) {

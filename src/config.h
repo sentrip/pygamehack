@@ -25,6 +25,6 @@ class Process;
 template<typename T>
 class Variable;
 
-#define PGH_ASSERT(expr, msg) if (!(expr)) throw std::exception{msg}
+#define PGH_ASSERT(expr, msg) if (!(expr)) throw std::exception{(msg)}
 
 }
