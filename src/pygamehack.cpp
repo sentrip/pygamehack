@@ -186,44 +186,43 @@ static constexpr auto hack_cheat_engine_save_pointer_scan_file = [](Hack& hack, 
     hack.cheat_engine_save_pointer_scan_file(path, addresses, settings, single_file);
 };
 
-static constexpr auto hack_scan_modify_loop = [](Hack& hack, Scan& scan, py::object& callback)
+static constexpr auto hack_scan_modify = [](Hack& self, Hack::Scan& scan, py::object& callback)
 {
     py::gil_scoped_release release;
-    self.scan_modify_loop(scan, [&callback]() {
+    return self.scan_modify(scan, [&callback](Hack::Scan& s) {
         py::gil_scoped_acquire acquire_gil;
-        return py::cast<bool>(callback());
+        return py::cast<bool>(callback(s));
     });
 };
 
-static constexpr auto hack_scan_set_value = [](py::object& self, py::object& value)
+static constexpr auto hack_scan_set_value = [](Hack::Scan& self, py::object& value)
 {
     if (py::isinstance(value, py::globals()["str"])) {
-        scan.set_value(value.cast<string>());
+        self.set_value(value.cast<string>());
     }
     else {
-        auto& scan = self.cast<Hack::Scan&>();
         u8 buffer[8]{};
 
         if (py::isinstance(value, py::globals()["int"])) {
-            PGH_ASSERT(scan.value_size <= 8, "Cannot set non-int value with a int");
+            PGH_ASSERT(self.value_size <= 8, "Cannot set non-int value with a int");
             auto v = value.cast<i64>();
-            memcpy(buffer, &v, scan.value_size);
+            memcpy(buffer, &v, self.value_size);
         }
         else if (py::isinstance(value, py::globals()["float"])) {
-            PGH_ASSERT(scan.value_size <= 8, "Cannot set non-float value with a float");
+            PGH_ASSERT(self.value_size <= 8, "Cannot set non-float value with a float");
             auto v = value.cast<double>();
-            memcpy(buffer, &v, scan.value_size);
+            memcpy(buffer, &v, self.value_size);
         }
         else if (py::isinstance(value, py::globals()["bool"])) {
-            PGH_ASSERT(scan.value_size == 1, "Cannot set non-bool value with a bool");
+            PGH_ASSERT(self.value_size == 1, "Cannot set non-bool value with a bool");
             auto v = value.cast<bool>();
-            memcpy(buffer, &v, scan.value_size);
+            memcpy(buffer, &v, self.value_size);
         }
         else {
             PGH_ASSERT(false, "Unrecognized type encountered when setting memory scan value");
         }
 
-        scan.set_value(scan.type_id(), buffer, scan.value_size);
+        self.set_value(self.type_id(), buffer, self.value_size);
     }
 };
 
@@ -715,8 +714,9 @@ void define_buffer(py::module& m)
 void define_hack_scan(py::module& m)
 {
     py::class_<Hack::Scan> scan_class(m, "MemoryScan");
+
     scan_class
-        .def_static("str", [](const string& v, uptr b, usize s, usize m, bool r, bool w, bool e, bool t){ return Hack::Scan(v, b, s, m, r, w, e, t); },
+        .def_static("str", [](const string& v, uptr b, usize s, usize m, bool r, bool w, bool e, bool rx, bool t){ return Hack::Scan(v, b, s, m, r, w, e, rx, t); },
                 "value"_a, "begin"_a, "size"_a, py::kw_only(), "max_results"_a=0,
                 "read"_a=true, "write"_a=false, "execute"_a=false,
                 "regex"_a=false, "threaded"_a=true)
@@ -828,7 +828,7 @@ void define_hack(py::module& m)
                 "scan"_a)
 
        .def(
-            "scan_modify", hack_scan_modify_loop,
+            "scan_modify", hack_scan_modify,
                 "Scan in a loop filtering results at every step by the value set in the previous step. See 'MemoryScan' for details.",
                 "scan"_a, "modify_func"_a)
 

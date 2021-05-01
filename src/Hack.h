@@ -27,7 +27,7 @@ public:
     
     std::vector<uptr>   scan(Scan& scan) const;
 
-    std::vector<uptr>   scan_modify_loop(Scan& scan, ScanModifyLoopFunc&& modify) const;
+    std::vector<uptr>   scan_modify(Scan& scan, ScanModifyLoopFunc&& modify) const;
 
     // Address auto-update
     void                start_auto_update(Address& address);

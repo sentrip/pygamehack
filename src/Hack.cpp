@@ -169,8 +169,8 @@ static void do_fast_memory_scan_reduce(usize n_threads, std::vector<uptr>& resul
 
         u8 buffer[64]{};
         for (const uptr r: previous_results) {
-            _process.read_memory(buffer, r, scan.value_size);
-            if (memcmp(scan.data(), buffer, scan.value_size) == 0) {
+            process.read_memory(buffer, r, value_size);
+            if (memcmp(value, buffer, value_size) == 0) {
                 results.push_back(r);
             }
         }
@@ -227,11 +227,11 @@ std::vector<uptr> Hack::scan(Scan& scan) const
 std::vector<uptr> Hack::scan_reduce(const std::vector<uptr>& results, const Scan& scan) const
 {
     std::vector<uptr> merged_results;
-    do_fast_memory_scan_reduce(usize(scan.threaded), merged_results, results, scan.data(), scan.value_size, scan.regex);
+    do_fast_memory_scan_reduce(usize(scan.threaded), merged_results, results, _process, scan.data(), scan.value_size, scan.regex);
     return merged_results;
 }
 
-std::vector<uptr> Hack::scan_modify(Scan& scan, ScanModifyLoopFunc&& modify) const
+std::vector<uptr> Hack::scan_modify(Hack::Scan& scan, ScanModifyLoopFunc&& modify) const
 {
     bool should_continue = false;
     std::vector<uptr> results, reduced_results;
@@ -241,7 +241,7 @@ std::vector<uptr> Hack::scan_modify(Scan& scan, ScanModifyLoopFunc&& modify) con
     while (true) {
         if (should_continue) std::swap(results, reduced_results);
         should_continue = modify(scan);
-        do_fast_memory_scan_reduce(n_threads, reduced_results, results, scan.data(), value_size, scan.regex);
+        do_fast_memory_scan_reduce(n_threads, reduced_results, results, _process, scan.data(), value_size, scan.regex);
         if (!should_continue) break;
     }
 
