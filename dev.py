@@ -29,3 +29,6 @@ if __name__ == '__main__':
     elif sys.argv[1] == 't':
         os.system('python setup.py install')
         os.system('pytest -s ' + ' '.join(sys.argv[2:] if len(sys.argv) > 2 else []))
+
+    elif sys.argv[1] == 'cloc':
+        os.system('cloc src/ pygamehack/ pygamehack_gui/ %s --exclude-dir external --exclude-lang=XML,CMake' % ' '.join(sys.argv[2:]))

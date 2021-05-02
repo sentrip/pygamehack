@@ -120,8 +120,7 @@ Address Address::CreateDynamic(Address& parent, const u32* offsets, usize n_offs
     a._type = u64(Type::DYNAMIC);
     new (a._storage) DynamicAddressData;
     a._dynamic.parent = &parent;
-    a._dynamic.offsets.reserve(n_offsets);
-    for (const auto* it = offsets; it < offsets + n_offsets; ++it) { a._dynamic.offsets.push_back(*it); }
+    a._dynamic.offsets.insert(a._dynamic.offsets.end(), offsets, offsets + n_offsets);
     return a;
 }
 

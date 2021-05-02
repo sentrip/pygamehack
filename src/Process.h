@@ -11,7 +11,7 @@
 namespace pygamehack {
     
 class Process;
-using uptr_path = std::vector<uptr>;
+using uptr_path = std::vector<u32>;
 using module_map = std::unordered_map<string, std::tuple<uptr, usize>>;
 
 

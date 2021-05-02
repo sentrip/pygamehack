@@ -4,6 +4,45 @@
 
 namespace pygamehack {
 
+static_assert(sizeof(Operand) == sizeof(::OPERAND), "Operand structs do not match");
+static_assert(offsetof(Operand, type) == offsetof(::OPERAND, type), "Operand structs do not match");
+static_assert(offsetof(Operand, reg) == offsetof(::OPERAND, reg), "Operand structs do not match");
+static_assert(offsetof(Operand, basereg) == offsetof(::OPERAND, basereg), "Operand structs do not match");
+static_assert(offsetof(Operand, indexreg) == offsetof(::OPERAND, indexreg), "Operand structs do not match");
+static_assert(offsetof(Operand, scale) == offsetof(::OPERAND, scale), "Operand structs do not match");
+static_assert(offsetof(Operand, dispbytes) == offsetof(::OPERAND, dispbytes), "Operand structs do not match");
+static_assert(offsetof(Operand, dispoffset) == offsetof(::OPERAND, dispoffset), "Operand structs do not match");
+static_assert(offsetof(Operand, immbytes) == offsetof(::OPERAND, immbytes), "Operand structs do not match");
+static_assert(offsetof(Operand, immoffset) == offsetof(::OPERAND, immoffset), "Operand structs do not match");
+static_assert(offsetof(Operand, sectionbytes) == offsetof(::OPERAND, sectionbytes), "Operand structs do not match");
+static_assert(offsetof(Operand, section) == offsetof(::OPERAND, section), "Operand structs do not match");
+static_assert(offsetof(Operand, displacement) == offsetof(::OPERAND, displacement), "Operand structs do not match");
+
+
+static_assert(sizeof(Instruction) == sizeof(::INSTRUCTION), "Instruction structs do not match");
+static_assert(offsetof(Instruction, length) == offsetof(::INSTRUCTION, length), "Instruction structs do not match");
+static_assert(offsetof(Instruction, type) == offsetof(::INSTRUCTION, type), "Instruction structs do not match");
+static_assert(offsetof(Instruction, mode) == offsetof(::INSTRUCTION, mode), "Instruction structs do not match");
+static_assert(offsetof(Instruction, opcode) == offsetof(::INSTRUCTION, opcode), "Instruction structs do not match");
+static_assert(offsetof(Instruction, modrm) == offsetof(::INSTRUCTION, modrm), "Instruction structs do not match");
+static_assert(offsetof(Instruction, sib) == offsetof(::INSTRUCTION, sib), "Instruction structs do not match");
+static_assert(offsetof(Instruction, modrm_offset) == offsetof(::INSTRUCTION, modrm_offset), "Instruction structs do not match");
+static_assert(offsetof(Instruction, extindex) == offsetof(::INSTRUCTION, extindex), "Instruction structs do not match");
+static_assert(offsetof(Instruction, fpuindex) == offsetof(::INSTRUCTION, fpuindex), "Instruction structs do not match");
+static_assert(offsetof(Instruction, dispbytes) == offsetof(::INSTRUCTION, dispbytes), "Instruction structs do not match");
+static_assert(offsetof(Instruction, immbytes) == offsetof(::INSTRUCTION, immbytes), "Instruction structs do not match");
+static_assert(offsetof(Instruction, sectionbytes) == offsetof(::INSTRUCTION, sectionbytes), "Instruction structs do not match");
+static_assert(offsetof(Instruction, op1) == offsetof(::INSTRUCTION, op1), "Instruction structs do not match");
+static_assert(offsetof(Instruction, op2) == offsetof(::INSTRUCTION, op2), "Instruction structs do not match");
+static_assert(offsetof(Instruction, op3) == offsetof(::INSTRUCTION, op3), "Instruction structs do not match");
+static_assert(offsetof(Instruction, ptr) == offsetof(::INSTRUCTION, ptr), "Instruction structs do not match");
+static_assert(offsetof(Instruction, flags) == offsetof(::INSTRUCTION, flags), "Instruction structs do not match");
+static_assert(offsetof(Instruction, eflags_affected) == offsetof(::INSTRUCTION, eflags_affected), "Instruction structs do not match");
+static_assert(offsetof(Instruction, eflags_used) == offsetof(::INSTRUCTION, eflags_used), "Instruction structs do not match");
+static_assert(offsetof(Instruction, iop_written) == offsetof(::INSTRUCTION, iop_written), "Instruction structs do not match");
+static_assert(offsetof(Instruction, iop_read) == offsetof(::INSTRUCTION, iop_read), "Instruction structs do not match");
+
+
 
 static void 
 do_extract_searchable_byte_ranges(
@@ -59,7 +98,6 @@ do_extract_searchable_byte_ranges(
 
 Instruction Instruction::from_string(string code, Mode m)
 {
-    static_assert(sizeof(Instruction) == sizeof(::INSTRUCTION), "Instruction structs do not match");
     Instruction inst{};
     ::get_instruction((::INSTRUCTION*)&inst, (unsigned char*)code.data(), (::Mode)m);
     return inst;

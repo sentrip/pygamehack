@@ -8,7 +8,7 @@
 
 namespace pygamehack {
 
-using uptr_path = std::vector<uptr>;
+using uptr_path = std::vector<u32>;
 
 
 struct DynamicAddressData {
