@@ -1,100 +1,77 @@
 import ast
 import io
 import tokenize
-
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Iterable
+from typing import Any, Callable, Iterable, List, Optional, Tuple
+
+__all__ = [
+    'classes_to_string', 'string_to_classes',
+    'classes_to_tuples', 'tuples_to_classes', 'update_classes',
+    'Class', 'Field', 'Comment',
+    'AbstractSourceGenerator', 'PythonSourceGenerator'
+]
 
 
-#region Conversions
+#region Public API
 
 def string_to_classes(
-        src: str
+        src: str,
+        convert_data: Optional[Callable[[Any], Any]] = None
 ) -> ['Class']:
     """
     Convert a string into a list of Class definitions
     """
+    classes = []
+    convert_data = convert_data or (lambda x: x)
+
     module = ast.parse(src)
-
-    classes, seen = [], set()
-
     for node in module.body:
         if isinstance(node, ast.ClassDef):
-            _parse_class(node, src, classes=classes)
+            classes.append(_parse_class_node(node, src, convert_data))
 
-    _assign_comments(_get_comments(src), classes)
+    _update_class_definitions_with_comments(classes, src)
 
     return classes
 
 
 def classes_to_string(
         classes: ['Class'],
-        generator: Optional['AbstractCodeGenerator'] = None,
+        generator: Optional['AbstractSourceGenerator'] = None,
         skip_fields: Optional[Iterable] = None
 ) -> str:
     """
     Convert a list of Class definitions into a string (the source code required to use these classes)
     """
-    generator = generator or DefaultPythonCodeGenerator()
+    generator = generator or PythonSourceGenerator()
     skipped = set(v for v in (skip_fields or []))
 
     generator.write_file_begin()
 
-    _apply_to_roots(classes, lambda c: _generate_class(c, generator, skipped))
+    for c in [cls for cls in classes if cls.name == cls.root().name]:
+        _generate_class_src(c, generator, skipped)
 
     generator.write_file_end()
 
     return generator.generated_code()
 
 
-def replace_class_fields(
-        src_classes: ['Class'],
-        dst_classes: ['Class'],
-        replacer: 'AbstractCodeReplacer' = None,
-        skip_fields: Optional[Iterable] = None
-):
-    """
-    Replace the fields of all classes in 'dst_classes' that exist in the corresponding class in 'src_classes'
-    using the given replacer to replace the fields
-    """
-    replacer = replacer or DefaultPythonCodeReplacer()
-    skipped = set(v for v in (skip_fields or []))
-    _apply_to_roots(dst_classes, lambda c: _replace_class(c, src_classes, replacer, skipped))
-
-
-def replace_class_fields_in_string(
-        classes: ['Class'],
-        target_src: str,
-        replacer: 'AbstractCodeReplacer' = None,
-        skip_fields: Optional[Iterable] = None
-) -> str:
-    """
-    Replace the source code of fields defined in 'target_src' with the generated code of fields in 'classes'
-    """
-    replacer = replacer or DefaultPythonCodeReplacer()
-    skipped = set(v for v in (skip_fields or []))
-
-    target_lines = target_src.splitlines()
-    _apply_to_roots(classes, lambda c: _replace_class_code(c, target_lines, replacer, skipped))
-    return '\n'.join(target_lines)
-
-
 def classes_to_tuples(
-        classes: ['Class']
-) -> [(str, Any)]:
+        classes: List['Class']
+) -> List[Tuple[str, Any]]:
     """
     Convert a list of Class definitions into a list of tuples of the fields
     Each tuple contains the full path of each field in each Class definition and the data for that field
     NOTE: Lots of information contained in Classes/Fields is stripped when converting to tuples (like line-numbers)
     """
     tuples = []
-    _apply_to_roots(classes, lambda c: _generate_tuples(c, tuples))
+    for c in [cls for cls in classes if cls.name == cls.root().name]:
+        tuples.extend(_generate_tuples(c))
     return tuples
 
 
 def tuples_to_classes(
-        tuples: [(str, Any)]
-) -> ['Class']:
+        tuples: List[Tuple[str, Any]]
+) -> List['Class']:
     """
     Convert a list of tuples into a list of Class definitions
 
@@ -107,99 +84,22 @@ def tuples_to_classes(
         _parse_tuple(name, data, classes)
     return classes
 
-#endregion
 
+def update_classes(
+        src_classes: List['Class'],
+        dst_classes: List['Class'],
+        skip_fields: Optional[Iterable] = None
+):
+    """
+    Replace the fields of all classes in 'dst_classes' that exist in the corresponding class in 'src_classes'.
+    Fields in 'src_classes' that do not exist in 'dst_classes' will be added.
+    """
+    skipped = set(v for v in (skip_fields or []))
+    for c in dst_classes:
+        _replace_class_fields(c, src_classes, skipped)
 
-#region Generator/Replacer Interface
-
-class AbstractCodeManipulator(ABC):
-
-    max_line_length = 120
-    min_field_name_length = 30
-    min_annotation_length = 50
-    min_data_length = 30
-
-
-class AbstractCodeReplacer(AbstractCodeManipulator):
-
-    @abstractmethod
-    def replace(self, src: 'Field', dst: 'Field'):
-        raise NotImplementedError
-
-    @abstractmethod
-    def regenerate(self, field: 'Field', previous_lines: [str]) -> str:
-        raise NotImplementedError
-
-
-class AbstractCodeGenerator(AbstractCodeManipulator):
-
-    def __init__(self, write_int_as_hex=True):
-        self.indent = 0
-        self.write_int_as_hex = write_int_as_hex
-        self._data = io.StringIO()
-
-    def generated_code(self) -> str:
-        return self._data.getvalue()
-
-    @abstractmethod
-    def write_file_begin(self):
-        raise NotImplementedError
-
-    @abstractmethod
-    def write_file_end(self):
-        raise NotImplementedError
-
-    @abstractmethod
-    def write_class_begin(self, cls: 'Class'):
-        raise NotImplementedError
-
-    @abstractmethod
-    def write_class_end(self, cls: 'Class'):
-        raise NotImplementedError
-    
-    @abstractmethod
-    def write_empty_class(self, cls: 'Class'):
-        raise NotImplementedError
-
-    @abstractmethod
-    def write_field(self, field: 'Field'):
-        raise NotImplementedError
-
-    def write(self, value: str):
-        self._data.write(value)
-
-    def write_indent(self):
-        self.write('    ' * self.indent)
-
-    def write_line(self, line: Optional[str] = None):
-        if line:
-            self.write_indent()
-            self.write(line)
-        self.write('\n')
-
-    def field_data_to_string(self, field: 'Field') -> str:
-        if self.write_int_as_hex and isinstance(field.data, int):
-            return f'0x{field.data:X}'
-        else:
-            return '[' + ', '.join(f'0x{v:X}' for v in field.data) + ']'
-
-    @classmethod
-    def generate_class(cls, klass: 'Class', *args, indent=0, **kwargs) -> str:
-        generator = cls(*args, **kwargs)
-        generator.indent = indent
-        _generate_class(klass, generator, [])
-        return generator.generated_code()
-
-    @classmethod
-    def generate_field(cls, field: 'Field', *args, **kwargs) -> str:
-        generator = cls(*args, **kwargs)
-        generator.indent = field.indent
-        generator.write_indent()
-        generator.write_field(field)
-        return generator.generated_code()
 
 #endregion
-
 
 #region Class/Field
 
@@ -210,8 +110,9 @@ class Class(object):
     end_lineno: int
     fields: {str: 'Field'}
     parent: Optional['Class']
-    children: ['Class']
-    comments: ['Comment']
+    children: List['Class']
+    comments: List['Comment']
+    docstring: Optional[str]
 
     def __init__(self, name: str, lineno: int, end_lineno: int):
         self.name = name
@@ -221,13 +122,14 @@ class Class(object):
         self.parent = None
         self.children = []
         self.comments = []
+        self.docstring = None
 
     def __repr__(self):
         return f'Class({self.name}, parent={self.parent})'
 
     def root(self) -> Optional['Class']:
         root_class = self
-        while root_class.parent:
+        while root_class.parent is not None:
             root_class = root_class.parent
         return root_class
 
@@ -296,81 +198,258 @@ class Field(object):
     def update_source(self, lines: [str], data: str, offset: int = 0):
         lines[self.lineno - 1 + offset: self.end_lineno + offset] = data
 
+
 #endregion
 
+#region SourceGenerator Interface
 
-#region Conversions Implementation
+class SourceGeneratorBase(object):
+    def __init__(self, write_int_as_hex=True):
+        self.indent = 0
+        self.write_int_as_hex = write_int_as_hex
+        self._data = io.StringIO()
 
-def _apply_to_roots(classes, func):
-    roots = [cls for cls in classes if cls.name == cls.root().name]
-    for cls in roots:
-        func(cls)
+    def generated_code(self) -> str:
+        return self._data.getvalue()
 
+    def write(self, value: str):
+        self._data.write(value)
 
-def _create_lines(previous_lines, max_length):
-    lines = []
-    for i, line in enumerate(previous_lines):
-        if i < max_length:
-            lines.append(line)
+    def write_indent(self):
+        self.write('    ' * self.indent)
+
+    def write_line(self, line: Optional[str] = None):
+        if line:
+            self.write_indent()
+            self.write(line)
+        self.write('\n')
+
+    def field_data_to_string(self, field: 'Field') -> str:
+        if self.write_int_as_hex and isinstance(field.data, int):
+            return f'0x{field.data:X}'
+        elif isinstance(field.data, list) or isinstance(field.data, tuple):
+            return '[' + ', '.join(f'0x{v:X}' for v in field.data) + ']'
         else:
-            lines[-1] += '\n%s' % line
-    return lines
+            return str(field.data)
 
 
-def _get_class_with_same_path(path_parts, classes):
-    for c in classes:
-        c_path_parts = c.full_path().split('.')
-        if path_parts == c_path_parts:
-            return c
-    return None
+class AbstractSourceGenerator(SourceGeneratorBase, ABC):
+
+    max_line_length = 120
+    min_field_name_length = 30
+    min_annotation_length = 50
+    min_data_length = 30
+
+    @abstractmethod
+    def write_file_begin(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def write_file_end(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def write_class_begin(self, cls: 'Class'):
+        raise NotImplementedError
+
+    @abstractmethod
+    def write_class_end(self, cls: 'Class'):
+        raise NotImplementedError
+
+    @abstractmethod
+    def write_empty_class(self, cls: 'Class'):
+        raise NotImplementedError
+
+    @abstractmethod
+    def write_field(self, field: 'Field'):
+        raise NotImplementedError
+
+    @classmethod
+    def generate_class(cls, klass: 'Class', *args, indent=0, **kwargs) -> str:
+        generator = cls(*args, **kwargs)
+        generator.indent = indent
+        _generate_class_src(klass, generator, [])
+        return generator.generated_code()
+
+    @classmethod
+    def generate_field(cls, field: 'Field', *args, **kwargs) -> str:
+        generator = cls(*args, **kwargs)
+        generator.indent = field.indent
+        generator.write_indent()
+        generator.write_field(field)
+        return generator.generated_code()
 
 
-def _get_raw_value(value):
-    if isinstance(value, ast.Constant):
-        return value.value
-    elif isinstance(value, ast.List):
-        return [_get_raw_value(v) for v in value.values]
-    elif isinstance(value, ast.Dict):
-        return {_get_raw_value(k): _get_raw_value(v) for k, v in zip(value.keys, value.values)}
-    elif isinstance(value, ast.Set):
-        return {_get_raw_value(v) for v in value.values}
-    elif isinstance(value, ast.Attribute):
-        path = value.attr
-        value = value.value
-        while not isinstance(value, ast.Name):
-            path = f'{value.attr}.{path}'
-            value = value.value
-        return f'{value.id}.{path}'
+class PythonSourceGenerator(AbstractSourceGenerator):
 
-    raise RuntimeError('Unrecognized value: ', value)
+    def __init__(self, *, write_int_as_hex: bool = True, base_class: Optional[str] = None):
+        super().__init__(write_int_as_hex=write_int_as_hex)
+        self.base_class = base_class
+
+    def write_file_begin(self):
+        pass
+
+    def write_file_end(self):
+        pass
+
+    def write_class_begin(self, cls: 'Class'):
+        if self.base_class:
+            self.write(f'class {cls.name}({self.base_class}):')
+        else:
+            self.write(f'class {cls.name}:')
+
+        if cls.docstring:
+            self.write_line()
+            self.indent += 1
+            self.write_indent()
+            self.indent -= 1
+            self.write(f'"""{cls.docstring}"""')
+
+    def write_class_end(self, cls: 'Class'):
+        self.write_line()
+        self.write_line()
+
+    def write_empty_class(self, cls: 'Class'):
+        self.write_indent()
+        self.write('pass')
+
+    def write_field(self, field: 'Field'):
+        for comment in field.comments:
+            if comment.lineno < field.lineno:
+                self.write(comment.comment)
+                self.write_line()
+                self.write_indent()
+
+        self.write(self.field_to_string(field))
+
+    def field_to_string(self, field: 'Field') -> str:
+        inline_comment_src, _ = _get_comments_inline_and_prefix(field)
+
+        if field.annotation_src:
+            fmt = '{:%ds}: {:%ds}= {:%ds}{}' % (self.min_field_name_length, self.min_annotation_length, self.min_data_length)
+            args = field.name, field.annotation_src, self.field_data_to_string(field), inline_comment_src
+        else:
+            fmt = '{:%ds}= {:%ds}{}' % (self.min_field_name_length, self.min_data_length)
+            args = field.name, self.field_data_to_string(field), inline_comment_src
+
+        return fmt.format(*args)
 
 
-def _parse_class(class_node, src, indent=0, classes=None):
-    classes = classes if classes is not None else []
+#endregion
 
+#region Implementation
+
+class Flag(object):
+    def __init__(self, value: bool = False):
+        self.value = value
+
+    def __bool__(self):
+        return self.value
+
+    def on(self):
+        self.value = True
+
+    def off(self):
+        self.value = False
+
+
+def _generate_class_src(cls, generator, skipped, wrote_end_flag=None):
+    wrote_end_flag = wrote_end_flag if wrote_end_flag is not None else Flag()
+    has_fields = len(cls.fields) > 0
+
+    wrote_end_flag.off()
+    generator.write_indent()
+    generator.write_class_begin(cls)
+    generator.indent += 1
+    generator.write_line()
+
+    for field_name in cls.fields:
+
+        if field_name in skipped:
+            continue
+
+        generator.write_indent()
+        generator.write_field(cls.fields[field_name])
+        generator.write_line()
+        wrote_end_flag.on()
+
+    if cls.children:
+        wrote_end_flag.off()
+
+        if has_fields:
+            generator.write_line()
+
+        for child in sorted(cls.children, key=lambda ch: ch.name):
+            _generate_class_src(child, generator, skipped, wrote_end_flag)
+
+    elif not has_fields:
+        generator.write_empty_class(cls)
+
+    generator.indent -= 1
+    generator.write_class_end(cls)
+    if not wrote_end_flag:
+        generator.write_line()
+    wrote_end_flag.on()
+
+
+def _parse_class_node(class_node, src, convert_data, indent=0):
     cls = Class(class_node.name, class_node.lineno, class_node.end_lineno)
+    for i, node in enumerate(class_node.body):
+        # Docstring
+        if i == 0 and isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+            cls.docstring = node.value.value
 
-    for node in class_node.body:
-
-        if isinstance(node, ast.Assign):
+        elif isinstance(node, ast.Assign):
             name = node.targets[0].id
-            cls.fields[name] = Field(cls, name, node.lineno, node.end_lineno, indent + 1, _get_raw_value(node.value))
+            data = convert_data(_get_raw_value(node.value))
+            cls.fields[name] = Field(cls, name, node.lineno, node.end_lineno, indent + 1, data)
 
         elif isinstance(node, ast.AnnAssign):
-            field = Field(cls, node.target.id, node.lineno, node.end_lineno, indent + 1, _get_raw_value(node.value))
+            data = convert_data(_get_raw_value(node.value))
+            field = Field(cls, node.target.id, node.lineno, node.end_lineno, indent + 1, data)
             field.annotation_src = ast.get_source_segment(src, node.annotation)
             cls.fields[field.name] = field
 
         elif isinstance(node, ast.ClassDef):
-            sub_classes = _parse_class(node, src, indent=indent + 1)
-            for c in sub_classes:
-                c.parent = cls
-            cls.children.extend(sub_classes)
-            classes.extend(sub_classes)
+            child = _parse_class_node(node, src, convert_data, indent=indent + 1)
+            child.parent = cls
+            cls.children.append(child)
 
-    classes.append(cls)
+    return cls
 
-    return classes
+
+def _replace_class_fields(cls, src_classes, skipped):
+    src_class = _get_class_with_same_path(cls.full_path().split('.'), src_classes)
+    all_fields = sorted(list(set(list(cls.fields) + list(src_class.fields if src_class else []))))
+
+    for field_name in all_fields:
+
+        if field_name in skipped:
+            continue
+
+        # Both have field
+        if field_name in cls.fields and src_class and field_name in src_class.fields:
+            cls.fields[field_name].data = src_class.fields[field_name].data
+
+        # Missing in cls
+        elif field_name not in cls.fields:
+            cls.fields[field_name] = src_class.fields[field_name]
+
+    for child in sorted(cls.children, key=lambda ch: ch.name):
+        _replace_class_fields(child, src_classes, skipped)
+
+
+def _generate_tuples(cls):
+    tuples = []
+    name_path = cls.full_path()
+
+    for name, field in cls.fields.items():
+        tuples.append((f'{name_path}.{name}', field.data))
+
+    for child in cls.children:
+        tuples.extend(_generate_tuples(child))
+
+    return tuples
 
 
 def _parse_tuple(name, data, classes):
@@ -403,145 +482,12 @@ def _parse_tuple(name, data, classes):
     cls.fields[field_name] = Field(cls, field_name, 0, 0, len(parts) - 1, data)
 
 
-def _generate_class(cls, generator, skipped):
-    has_fields = len(cls.fields) > 0
-
-    generator.write_indent()
-    generator.write_class_begin(cls)
-    generator.indent += 1
-    generator.write_line()
-
-    for field_name in sorted(cls.fields):
-
-        if field_name in skipped:
-            continue
-
-        generator.write_indent()
-        generator.write_field(cls.fields[field_name])
-        generator.write_line()
-
-    if cls.children:
-        if has_fields:
-            generator.write_line()
-
-        for child in sorted(cls.children, key=lambda ch: ch.name):
-            _generate_class(child, generator, skipped)
-    
-    elif not has_fields:
-        generator.write_empty_class(cls)
-
-    generator.indent -= 1
-    generator.write_class_end(cls)
-    generator.write_line()
-
-
-def _generate_tuples(cls, tuples):
-    name_path = cls.full_path()
-
-    for name, field in cls.fields.items():
-        tuples.append((f'{name_path}.{name}', field.data))
-
-    for child in cls.children:
-        _generate_tuples(child, tuples)
-
-
-def _replace_class(cls, src_classes, replacer, skipped):
-    src_class = _get_class_with_same_path(cls.full_path().split('.'), src_classes)
-    all_fields = sorted(list(set(list(cls.fields) + list(src_class.fields if src_class else []))))
-
-    for field_name in all_fields:
-
-        if field_name in skipped:
-            continue
-
-        # Both have field
-        if field_name in cls.fields and src_class and field_name in src_class.fields:
-            replacer.replace(src_class.fields[field_name], cls.fields[field_name])
-
-        # Missing in cls
-        elif field_name not in cls.fields:
-            cls.fields[field_name] = src_class.fields[field_name]
-
-    for child in sorted(cls.children, key=lambda ch: ch.name):
-        _replace_class(child, src_classes, replacer, skipped)
-
-
-def _replace_class_code(cls, target_lines, replacer, skipped):
-    previous_field = cls
-
-    for field_name in sorted(cls.fields):
-
-        if field_name in skipped:
-            continue
-
-        field = cls.fields[field_name]
-
-        if field.lineno == 0:
-            field_lines = DefaultPythonCodeGenerator.generate_field(field).splitlines()
-            field_lines = target_lines[previous_field.lineno - 1: previous_field.end_lineno] + field_lines
-            field.lineno, field.end_lineno = previous_field.lineno, previous_field.end_lineno
-            replacer.line_offset += field.line_count
-        else:
-            field_lines = replacer.regenerate(field, field.source(target_lines, offset=replacer.line_offset)).splitlines()
-
-        field.update_source(target_lines, _create_lines(field_lines, field.line_count),
-                            offset=max(0, replacer.line_offset - field.line_count))
-        previous_field = field
-
-    for child in sorted(cls.children, key=lambda ch: ch.name):
-        _replace_class_code(child, target_lines, replacer, skipped)
-
-
-def _assign_comments(comments, classes):
-    if not comments:
-        return
-
-    classes_and_fields = _get_class_and_field_for_each_line(classes)
-
-    for comment in comments:
-        if comment.lineno >= len(classes_and_fields):
-            continue
-
-        cls, field = classes_and_fields[comment.lineno - 1]
-        if field:
-            field.comments.append(comment)
-        elif cls:
-            cls.comments.append(comment)
-
-
-def _get_class_and_field_for_each_line(classes):
-    max_line = max(0, *(c.end_lineno for c in classes))
-    classes_and_fields = [(None, None) for _ in range(max_line)]
-
-    sorted_classes = sorted(classes, key=lambda c: c.lineno)
-
-    previous_class = None
-
-    for i, cls in enumerate(sorted_classes):
-        class_begin = (cls.lineno - 1) if not previous_class else previous_class.end_lineno
-        for lineno in range(class_begin, cls.end_lineno):
-            classes_and_fields[lineno] = (cls, sorted_classes[i + 1] if i < len(sorted_classes) - 1 else None)
-
-        previous_field = None
-        sorted_fields = sorted(cls.fields.values(), key=lambda f: f.lineno)
-
-        for field in sorted_fields:
-            begin = cls.lineno if not previous_field else previous_field.end_lineno
-            for lineno in range(begin, field.end_lineno):
-                classes_and_fields[lineno] = (cls, field)
-
-            previous_field = field
-
-    return classes_and_fields
-
-
-def _get_comments(s):
-    comments = []
-    g = tokenize.tokenize(io.BytesIO(s.encode('utf-8')).readline)
-    for token, value, begin, end, _ in g:
-        if token == tokenize.COMMENT:
-            comments.append(Comment(value, begin[0], begin[1], end[1]))
-    return comments
+def _get_class_with_same_path(path_parts, classes):
+    for c in classes:
+        c_path_parts = c.full_path().split('.')
+        if path_parts == c_path_parts:
+            return c
+    return None
 
 
 def _get_comments_inline_and_prefix(field):
@@ -555,66 +501,54 @@ def _get_comments_inline_and_prefix(field):
 
     return inline_comment_src, [field.comments[idx] for idx in range(len(field.comments)) if idx != i]
 
-#endregion
+
+def _get_all_comments_from_src(src):
+    comments = []
+    g = tokenize.tokenize(io.BytesIO(src.encode('utf-8')).readline)
+    for token, value, begin, end, _ in g:
+        if token == tokenize.COMMENT:
+            comments.append(Comment(value, begin[0], begin[1], end[1]))
+    return comments
 
 
-#region Python Generator
+def _get_raw_value(value):
+    if isinstance(value, ast.Constant):
+        return value.value
+    elif isinstance(value, ast.List):
+        return [_get_raw_value(v) for v in value.values]
+    elif isinstance(value, ast.Dict):
+        return {_get_raw_value(k): _get_raw_value(v) for k, v in zip(value.keys, value.values)}
+    elif isinstance(value, ast.Set):
+        return {_get_raw_value(v) for v in value.values}
+    elif isinstance(value, ast.Attribute):
+        path = value.attr
+        value = value.value
+        while not isinstance(value, ast.Name):
+            path = f'{value.attr}.{path}'
+            value = value.value
+        return f'{value.id}.{path}'
 
-class DefaultPythonCodeGenerator(AbstractCodeGenerator):
-
-    def write_file_begin(self):
-        pass
-
-    def write_file_end(self):
-        pass
-
-    def write_class_begin(self, cls: 'Class'):
-        self.write(f'class {cls.name}:')
-
-    def write_class_end(self, cls: 'Class'):
-        pass
-
-    def write_empty_class(self, cls: 'Class'):
-        self.write_indent()
-        self.write('pass')
-
-    def write_field(self, field: 'Field'):
-        # TODO: Write pre-comments
-        self.write(self.field_to_string(field))
-
-    def field_to_string(self, field: 'Field') -> str:
-        inline_comment_src, _ = _get_comments_inline_and_prefix(field)
-
-        if field.annotation_src:
-            fmt = '{:%ds}: {:%ds}= {:%ds}{}' % (self.min_field_name_length, self.min_annotation_length, self.min_data_length)
-            args = field.name, field.annotation_src, self.field_data_to_string(field), inline_comment_src
-        else:
-            fmt = '{:%ds}= {:%ds}{}' % (self.min_field_name_length, self.min_data_length)
-            args = field.name, self.field_data_to_string(field), inline_comment_src
-        
-        return fmt.format(*args)
-
-#endregion
+    raise RuntimeError('Unrecognized value: ', value)
 
 
-#region Python Replacer
+def _update_consume_comments(cls, comments):
+    while comments and comments[0].lineno <= cls.lineno:
+        cls.comments.append(comments[0])
+        comments.pop(0)
 
-class DefaultPythonCodeReplacer(AbstractCodeReplacer):
+    # TODO: Handle inline comments for multi-line fields
+    for field in sorted(list(cls.fields.values()), key=lambda f: f.lineno):
+        while comments and comments[0].lineno <= field.lineno:
+            field.comments.append(comments[0])
+            comments.pop(0)
 
-    def __init__(self, line_offset=0, write_int_as_hex=True):
-        self.line_offset = line_offset
-        self.write_int_as_hex = write_int_as_hex
+    for child in sorted(cls.children, key=lambda c: c.lineno):
+        _update_consume_comments(child, comments)
 
-    def replace(self, src: 'Field', dst: 'Field'):
-        dst.data = src.data
-        if dst.lineno:
-            dst.end_lineno = dst.lineno + len(self.field_to_string(dst).splitlines()) - 1 + self.line_offset
 
-    def regenerate(self, field: 'Field', previous_lines: [str]) -> str:
-        return field.indent_str + self.field_to_string(field)
-
-    def field_to_string(self, field: 'Field') -> str:
-        return DefaultPythonCodeGenerator(write_int_as_hex=self.write_int_as_hex).field_to_string(field)
+def _update_class_definitions_with_comments(classes, src):
+    comments = _get_all_comments_from_src(src)
+    for cls in sorted(classes, key=lambda c: c.lineno):
+        _update_consume_comments(cls, comments)
 
 #endregion
- 

@@ -27,14 +27,14 @@ def hack():
 
 @pytest.fixture(scope='session')
 def program(arch):
-    program = subprocess.Popen([f"tests/{get_program_name(arch)}"], stdout=subprocess.DEVNULL, cwd='tests/')
+    program = subprocess.Popen([f"tests/test_program/{get_program_name(arch)}"], stdout=subprocess.DEVNULL, cwd='tests/test_program')
     yield program
     program.kill()
 
 
 @pytest.fixture(scope='session')
 def marker_address(arch, program):
-    address_path = f"tests/MarkerAddress-{arch}.txt"
+    address_path = f"tests/test_program/MarkerAddress-{arch}.txt"
     total_time = 0
     while not os.path.exists(address_path):
         time.sleep(0.001)

@@ -1,7 +1,13 @@
 import pygamehack as gh
 
+
+# Comment before class - line 1
+# Comment before class - line 2
 class IntTypes(gh.Struct):
-    num_i8 : gh.i8  =  0
+    """Class Docstring"""
+    # Comment before field - line 1
+    # Comment before field - line 2
+    num_i8 : gh.i8  =  0  # Inline comment
     num_i16: gh.i16 =  2
     num_i32: gh.i32 =  4
     num_i64: gh.i64 =  8
@@ -9,6 +15,7 @@ class IntTypes(gh.Struct):
     num_u16: gh.u16 = 18
     num_u32: gh.u32 = 20
     num_u64: gh.u64 = 24
+
 
 class TestProgram(gh.Struct):
     marker: gh.uint         = 0x0

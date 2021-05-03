@@ -14,7 +14,7 @@ if __name__ == '__main__':
         exit(0)
 
     if sys.argv[1] == 'c':
-        os.chdir('tests')
+        os.chdir('tests/test_program')
 
         compile_test_programs('x64', 'build')
         compile_test_programs('x86', 'build-32')

@@ -3,8 +3,14 @@ from abc import ABCMeta, abstractmethod
 from typing import Union
 import pygamehack.c as cgh
 
-
-# TODO: Child variable is buffer when parent is not buffer
+__all__ = [
+    # Main API
+    'StructMeta', 'StructInfo', 'StructType', 'TypeWrapper',
+    # Info
+    'StructDefinition', 'StructField',
+    # Low level
+    'StructData', 'StructMethods', 'StructProperty', '_sort_by_dependency'
+]
 
 # region StructMeta
 
@@ -740,12 +746,12 @@ class TypeWrapper(type):
 
         class Wrapper(metaclass=gh.TypeWrapper):
             @classmethod
-            def get_type(mcs, t):
+            def get_type(cls, t):
                 return gh.StructType(t)
 
         class List(metaclass=gh.TypeWrapper):
             @classmethod
-            def get_type(mcs, t):
+            def get_type(cls, t):
                 return gh.StructType(t[0], element_size=StructType.LAZY_SIZE, element_count=t[1])
 
         class MyStruct(metaclass=gh.Struct):

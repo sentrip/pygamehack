@@ -8,21 +8,21 @@ import pygamehack as gh
 
 @pytest.fixture
 def pointer_scan_file_read():
-    return "tests/core/CheatEnginePointerScans/TestProgram-64.PTR"
+    return "tests/utils/CheatEnginePointerScans/TestProgram-64.PTR"
 
 @pytest.fixture
 def pointer_scan_file_read_uncompressed():
-    return "tests/core/CheatEnginePointerScans/TestProgramNonCompressed-64.PTR"
+    return "tests/utils/CheatEnginePointerScans/TestProgramNonCompressed-64.PTR"
 
 @pytest.fixture
 def get_pointer_scan_file_write_name_and_remove():
     def get(base):
-        path = f"tests/core/CheatEnginePointerScans/{base}-64.PTR"
+        path = f"tests/utils/CheatEnginePointerScans/{base}-64.PTR"
         yield path
         os.remove(path)
         for f in os.listdir(path.replace(f'{base}-64.PTR', '')):
             if f.startswith(base):
-                os.remove('tests/core/CheatEnginePointerScans/' + f)
+                os.remove('tests/utils/CheatEnginePointerScans/' + f)
     return get
 
 @pytest.fixture

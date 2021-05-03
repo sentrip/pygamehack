@@ -1,11 +1,14 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Union
 
-from .struct_parser import tuples_to_classes, classes_to_string, DefaultPythonCodeGenerator, Class as StructClass
+import pygamehack.struct_parser as struct_parser
+from .struct_parser import tuples_to_classes, classes_to_string, Comment
+from .struct_file import PythonStructSourceGenerator
 
 __all__ = ['ReClassNet']
 
 # TODO: ReClassNet all types
+
 
 #region ReClassNet
 
@@ -15,11 +18,11 @@ class ReClassNet:
     class Class(object):
         name: str
         size: int = 0
-        fields: Dict[str, 'Class'] = field(default_factory=dict)
+        fields: Dict[str, Union[str, 'Class']] = field(default_factory=dict)
         offsets: Dict[str, List[int]] = field(default_factory=dict)
         comments: Dict[str, str] = field(default_factory=dict)
 
-
+    @staticmethod
     def load_project_file(path: str) -> List[Class]:
         """
         Load a ReClass.Net project file (.rcnet) from the given path into a list of ReClassNet Class definitions
@@ -30,16 +33,17 @@ class ReClassNet:
         classes = []
         archive = zipfile.ZipFile(path, 'r')
         with archive.open(C.DataFileName) as data_xml:    
-            mydoc = minidom.parse(data_xml)
-            platform, version = Parse.platform_version(mydoc)
-            custom_data = Parse.custom_data(mydoc)
-            type_mapping = Parse.type_mapping(mydoc)
-            enums = Parse.enums(mydoc)
-            classes.extend(Parse.classes(mydoc, type_mapping, platform))
+            doc = minidom.parse(data_xml)
+            platform, version = Parse.platform_version(doc)
+            # custom_data = Parse.custom_data(doc)
+            type_mapping = Parse.type_mapping(doc)
+            # enums = Parse.enums(doc)
+            classes.extend(Parse.classes(doc, type_mapping, platform))
         
         return classes
 
-    def convert_structs(classes: List[Class]) -> [StructClass]:
+    @staticmethod
+    def convert_structs(classes: List[Class], imported_name: str = 'gh') -> [struct_parser.Class]:
         """
         Convert the given list of ReClassNet Class definitions into a list of pygamehack Class definitions
         """
@@ -48,25 +52,23 @@ class ReClassNet:
         for class_def in classes:
             name_to_class[class_def.name] = class_def
             tuples.extend((f'{class_def.name}.{k}', v if len(v) > 1 else v[0]) for k, v in class_def.offsets.items())
-        
+
         struct_classes = tuples_to_classes(tuples)
-        for c in struct_classes:
-            for name, f in c.fields.items():
-                # TODO: ReClassNet Comments
-                f.annotation_src = f'{generator.library_name}.{name_to_class[f.cls.name].name}'
+
+        Parse.field_type_annotations(struct_classes, classes, name_to_class, imported_name)
 
         return struct_classes
 
-    def generate_struct_src(classes: List[Class], generator: Optional['AbstractCodeGenerator'] = None) -> str:
+    @staticmethod
+    def generate_struct_src(classes: List[Class], imported_name: str = 'gh') -> str:
         """
-        Generate source code for the given list of ReClassNet Class definitions using the provided generator, or the default ReClassNetPythonCodeGenerator
+        Generate source code for the given list of ReClassNet Class definitions
         """
-        generator = generator or ReClassNetPythonCodeGenerator()
+        return f'import pygamehack as {imported_name}\n\n\n' + classes_to_string(
+            ReClassNet.convert_structs(classes, imported_name),
+            generator=PythonStructSourceGenerator(imported_name=imported_name)
+        )
 
-        assert hasattr(generator, 'library_name'), \
-            'Code generator must define the property "library_name" in order to correctly prefix imported type names'
-
-        return classes_to_string(ReClassNet.generate_structs(classes), generator=generator)
 
 #endregion
 
@@ -109,6 +111,7 @@ class C:
         Flags = "flags"
         Value = "value"
 
+
 #endregion
 
 #region Parse
@@ -123,7 +126,7 @@ class Parse:
         platform = doc.documentElement.attributes[C.Attr.Platform].value
         
         version = int(doc.documentElement.attributes[C.Attr.Version].value)
-        if ((version & C.FileVersionCriticalMask) > (C.FileVersion & C.FileVersionCriticalMask)):
+        if (version & C.FileVersionCriticalMask) > (C.FileVersion & C.FileVersionCriticalMask):
             raise RuntimeError(f'The file version is unsupported.')
         
         return platform, version
@@ -158,12 +161,12 @@ class Parse:
             for node in enums_elem.item(0).childNodes:
                 name = node.attributes.get(C.Attr.Name) or ''
                 use_flags = node.attributes.get(C.Attr.Flags) or False
-                size = node.attributes.get(C.Attr.Size, 4) # TODO: Default enum size
+                size = node.attributes.get(C.Attr.Size, 4)  # TODO: Default enum size
                 values = {}
                 if node.length > 0:
                     for item in node.item(0).childNodes:
-                        item_name = node.attributes.get(C.Attr.Name) or ''
-                        value = node.attributes.get(C.Attr.Value) or 0
+                        item_name = item.attributes.get(C.Attr.Name) or ''
+                        value = item.attributes.get(C.Attr.Value) or 0
                         values[item_name] = value
                 enums.append((name, use_flags, size, values))
         return enums
@@ -197,7 +200,6 @@ class Parse:
                             classes.append(class_def)
                             seen_classes[uuid.value] = class_def
                             element_class.append((node, class_def))
-
         
         # Parse properties for each class recursively
         for node, class_def in element_class:
@@ -211,15 +213,16 @@ class Parse:
 
         # Sort classes in reverse dependency order
         dependencies = {}
-        for class_def in classes:
-            dependencies[class_def.name] = []
-            for child_def in class_def.fields.values():
-                if isinstance(child_def, ReClassNet.Class):        
-                    dependencies[class_def.name].append(child_def.name)
+        for parent in classes:
+            dependencies[parent.name] = []
+            for child in parent.fields.values():
+                if isinstance(child, ReClassNet.Class):
+                    dependencies[parent.name].append(child.name)
         _sort_by_dependency(classes, dependencies, lambda t: t.name)
         
         # Calculate class sizes now that all the classes have been sorted
-        calculated = {}
+        calc = {}
+
         def calculate_size_offsets(class_def, calculated):
             if class_def.name in calculated:
                 return class_def.size
@@ -248,8 +251,8 @@ class Parse:
             class_def.size = max(offset, class_def.size)
             return class_def.size
 
-        for class_def in classes:
-            calculate_size_offsets(class_def, calculated)
+        for parent in classes:
+            calculate_size_offsets(parent, calc)
 
     @staticmethod
     def create_class_property_from_node(class_def, node, types, seen_classes, parent=None, comes_from_pointer=False):
@@ -306,16 +309,26 @@ class Parse:
 
     #endregion
 
-#endregion
+    @staticmethod
+    def field_type_annotations(classes, class_defs, name_to_class_def, imported_name):
+        for c, class_def in zip(classes, class_defs):
+
+            assert c.name == class_def.name, "Something fucked up"
+
+            for name, f in c.fields.items():
+                # Comment
+                if class_def.comments[name]:
+                    f.comments.append(Comment(class_def.comments[name], 0, 0, 0))
+
+                # Annotation src
+                field_def = class_def.fields[name]
+                type_name = field_def if isinstance(field_def, str) else field_def.name
+                if type_name in name_to_class_def:
+                    f.annotation_src = f"'{type_name}'"
+                else:
+                    f.annotation_src = f'{imported_name}.{type_name}'
+
 
 #endregion
-
-#region ReClassNet Python Code Generator
-
-class ReClassNetPythonCodeGenerator(DefaultPythonCodeGenerator):
-    library_name = 'gh'
-
-    def write_file_begin(self):
-        self.write_line(f'import pygamehack as {self.library_name}\n')
 
 #endregion
