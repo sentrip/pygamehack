@@ -27,4 +27,17 @@ class Variable;
 
 #define PGH_ASSERT(expr, msg) if (!(expr)) throw std::exception{(msg)}
 
+#define FOR_EACH_INT_TYPE(F) \
+F(bool, "bool")\
+F(float, "float")\
+F(double, "double")\
+F(int8_t, "i8")\
+F(int16_t, "i16")\
+F(int32_t, "i32")\
+F(int64_t, "i64")\
+F(uint8_t, "u8")\
+F(uint16_t, "u16")\
+F(uint32_t, "u32")\
+F(uint64_t, "u64")
+
 }

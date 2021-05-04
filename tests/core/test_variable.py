@@ -7,7 +7,7 @@ import pygamehack as gh
 
 def test_buffer_variable_getitem():
     assert gh.buf[8] == (gh.buf, 8)
-    assert gh.p_buf[8] == (gh.p_buf, 8)
+    # assert gh.p_buf[8] == (gh.p_buf, 8)
 
 
 def test_variable_basic_read(hack, app):
@@ -119,42 +119,42 @@ def test_variable_buffer_write(hack, app, set_cleanup):
     assert buffer.read_u64(24) == 10000000000 + 5
 
 
-def test_variable_ptr_to_buffer_read(hack, app):
-    hack.attach(app.pid)
-
-    variable = gh.p_buf(gh.Address(hack, app.addr.ptr_types.marker), 32)
-
-    buffer = variable.read()
-
-    assert buffer.read_u32( 0) == app.marker_value
-    assert buffer.read_u32( 4) == 0
-
-
-def test_variable_ptr_to_buffer_write(hack, app, set_cleanup):
-    def cleanup():
-        buffer.write_u32(0, app.marker_value)
-        buffer.write_u32(4, 0)
-
-        variable.write(buffer)
-        variable.flush()
-
-    set_cleanup(cleanup)
-
-    hack.attach(app.pid)
-
-    variable = gh.p_buf(gh.Address(hack, app.addr.ptr_types.marker), 32)
-
-    buffer = variable.read()
-
-    assert buffer.read_u32( 0) == app.marker_value
-    assert buffer.read_u32( 4) == 0
-
-    buffer.write_u32(0, 10)
-    buffer.write_u32(4, 20)
-
-    variable.write(buffer)
-    variable.flush()
-    variable.read()
-    
-    assert buffer.read_u32( 0) == 10
-    assert buffer.read_u32( 4) == 20
+# def test_variable_ptr_to_buffer_read(hack, app):
+#     hack.attach(app.pid)
+#
+#     variable = gh.p_buf(gh.Address(hack, app.addr.ptr_types.marker), 32)
+#
+#     buffer = variable.read()
+#
+#     assert buffer.read_u32( 0) == app.marker_value
+#     assert buffer.read_u32( 4) == 0
+#
+#
+# def test_variable_ptr_to_buffer_write(hack, app, set_cleanup):
+#     def cleanup():
+#         buffer.write_u32(0, app.marker_value)
+#         buffer.write_u32(4, 0)
+#
+#         variable.write(buffer)
+#         variable.flush()
+#
+#     set_cleanup(cleanup)
+#
+#     hack.attach(app.pid)
+#
+#     variable = gh.p_buf(gh.Address(hack, app.addr.ptr_types.marker), 32)
+#
+#     buffer = variable.read()
+#
+#     assert buffer.read_u32( 0) == app.marker_value
+#     assert buffer.read_u32( 4) == 0
+#
+#     buffer.write_u32(0, 10)
+#     buffer.write_u32(4, 20)
+#
+#     variable.write(buffer)
+#     variable.flush()
+#     variable.read()
+#
+#     assert buffer.read_u32( 0) == 10
+#     assert buffer.read_u32( 4) == 20

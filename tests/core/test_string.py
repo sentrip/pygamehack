@@ -1,16 +1,15 @@
 import pytest
 import pygamehack as gh
-from pygamehack.types.string import String
 
 
 def test_variable_str_type():
-    assert String[32] == (String, 32)
+    assert gh.str[32] == (gh.str, 32)
 
 
 def test_variable_str_read(hack, app):
     hack.attach(app.pid)
 
-    variable = String(gh.Address(hack, app.addr.int_types.value + 32), 32)
+    variable = gh.str(gh.Address(hack, app.addr.int_types.value + 32), 32)
 
     assert variable.read() == "TestString"
 
@@ -24,7 +23,7 @@ def test_variable_str_write(hack, app, set_cleanup):
 
     hack.attach(app.pid)
 
-    variable = String(gh.Address(hack, app.addr.int_types.value + 32), 32)
+    variable = gh.str(gh.Address(hack, app.addr.int_types.value + 32), 32)
 
     variable.write("StringTest")
 

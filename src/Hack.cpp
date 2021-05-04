@@ -188,6 +188,11 @@ Hack::Hack()
     _address_names.add("");
 }
 
+Hack::~Hack()
+{
+    detach();
+}
+
 const Process& Hack::process() const
 {
     return _process;
@@ -195,6 +200,9 @@ const Process& Hack::process() const
 
 void Hack::attach(u32 process_id)
 {
+    if (_process.is_attached()) {
+        _process.detach();
+    }
     if (!_process.attach(process_id)) {
         std::cerr << "Failed to attach to process: " << process_id << "\n";
     }
@@ -202,6 +210,9 @@ void Hack::attach(u32 process_id)
 
 void Hack::attach(const string& process_name)
 {
+    if (_process.is_attached()) {
+        _process.detach();
+    }
     if (!_process.attach(process_name)) {
         std::cerr << "Failed to attach to process: " << process_name << "\n";
     }
@@ -209,7 +220,8 @@ void Hack::attach(const string& process_name)
 
 void Hack::detach()
 {
-    _process.detach();
+    if (_process.is_attached())
+        _process.detach();
 }
 
 uptr Hack::find(i8 value, uptr begin, usize size) const
@@ -401,6 +413,25 @@ void Hack::Scan::set_value(u64 type_hash, const u8* data, usize value_size)
 void Hack::Scan::set_value(const string& data)
 {
     set_value(typeid(string).hash_code(), (const u8*)data.c_str(), data.size());
+}
+
+const char* Hack::Scan::type_name() const
+{
+    if(type_hash == typeid(string).hash_code()) return "bytes";
+    if(type_hash == typeid(i8).hash_code()) return "i8";
+    if(type_hash == typeid(i16).hash_code()) return "i16";
+    if(type_hash == typeid(i32).hash_code()) return "i32";
+    if(type_hash == typeid(i64).hash_code()) return "i64";
+    if(type_hash == typeid(u8).hash_code()) return "u8";
+    if(type_hash == typeid(u16).hash_code()) return "u16";
+    if(type_hash == typeid(u32).hash_code()) return "u32";
+    if(type_hash == typeid(u64).hash_code()) return "u64";
+    if(type_hash == typeid(bool).hash_code()) return "bool";
+    if(type_hash == typeid(float).hash_code()) return "float";
+    if(type_hash == typeid(double).hash_code()) return "double";
+    if(type_hash == typeid(uptr).hash_code()) return "ptr";
+    if(type_hash == typeid(usize).hash_code()) return "usize";
+    return "unknown";
 }
 
 //endregion

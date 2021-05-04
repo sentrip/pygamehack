@@ -10,7 +10,7 @@ def gdb_path():
     return 'C:\\MinGW\\bin\\gdb.exe'
 
 
-@pytest.mark.skip
+# @pytest.mark.skip
 def test_gdb(hack, app, gdb_path):
     hack.attach(app.pid)
     
@@ -35,14 +35,14 @@ def test_gdb(hack, app, gdb_path):
     with gdb.continue_wait():
         hack.write_u32(app.addr.marker + 8, 1)
 
-    with gdb.continue_wait():
-        hack.write_u32(app.addr.marker + 8, 1)
-
-    with gdb.continue_wait():
-        hack.write_u32(app.addr.marker + 8, 1)
-
-    with gdb.continue_wait():
-        hack.write_u32(app.addr.marker + 8, 1)
+    # with gdb.continue_wait():
+    #     hack.write_u32(app.addr.marker + 8, 1)
+    #
+    # with gdb.continue_wait():
+    #     hack.write_u32(app.addr.marker + 8, 1)
+    #
+    # with gdb.continue_wait():
+    #     hack.write_u32(app.addr.marker + 8, 1)
     
     gdb.remove_watch(w)
 

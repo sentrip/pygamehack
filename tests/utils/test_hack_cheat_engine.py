@@ -110,7 +110,7 @@ def test_hack_cheat_engine_load_pointer_scan_file_uncompressed(pointer_scan_file
     assert settings.ends_with_offsets == []
 
 
-def test_hack_cheat_engine_save_pointer_scan_file_compressed(pointer_scan_file_write_uncompressed, pointer_scan_file_offsets_uncompressed):
+def test_hack_cheat_engine_save_pointer_scan_file_uncompressed(pointer_scan_file_write_uncompressed, pointer_scan_file_offsets_uncompressed):
     hack = gh.Hack()
 
     addresses = []

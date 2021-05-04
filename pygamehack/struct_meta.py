@@ -171,7 +171,7 @@ class StructMeta(ABCMeta):
 
         if not cls._info.is_custom_type:
             cls.__init__ = StructMethods.init
-            cls.__repr__ = StructMethods.repr
+            cls.__str__ = StructMethods.str
             cls.read = StructMethods.read
             cls.write = StructMethods.write
             cls.flush = StructMethods.flush
@@ -403,7 +403,7 @@ class StructMethods(object):
                 v.reset()
 
     @staticmethod
-    def repr(self):
+    def str(self):
         if getattr(self, 'address', None) is None:
             return self.__class__.__name__
         return f'{self.__class__.__name__}({cgh.Address.make_string(self.address.value, self.address.hack.process.arch)})'
@@ -478,8 +478,9 @@ class StructType(object):
     def is_buffer_subclass(cls):
         if isinstance(cls, StructType):
             return cls.is_buffer_class
-        else:
-            return cls is cgh.buf or (isinstance(cls, type) and issubclass(cls, cgh.buf))
+        elif isinstance(cls, type):
+            return any(issubclass(getattr(cgh, n, object), cls) for n in ['buf', 'p_buf', 'str', 'c_str'])
+        return False
 
     @staticmethod
     def is_compound_type_tuple(typ: tuple):
@@ -588,9 +589,6 @@ class StructField(object):
 
     def __repr__(self):
         return self.type.__name__
-
-    def __call__(self, *args, **kwargs):
-        return self.type(*args, **kwargs)
 
     @property
     def getter(self):

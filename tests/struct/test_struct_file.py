@@ -15,7 +15,7 @@ def temp_struct_file():
     os.remove(temp_name)
 
 
-@pytest.mark.skip
+# @pytest.mark.skip
 def test_struct_file(temp_struct_file):
     sf = StructFile(temp_struct_file)
     sf.load()
@@ -29,8 +29,8 @@ def test_struct_file(temp_struct_file):
     sf._impl.add_address('test', 10)
 
     sf.flush()
-    print(sf._impl.src)
-    print("#" * 150)
+    # print(sf._impl.src)
+    # print("#" * 150)
     sf.update_code([
         ('IntTypes.num_u8', Code(code='00 AA BB', offset=10, offset_size=4, begin=100, size=10))
     ])
@@ -38,12 +38,12 @@ def test_struct_file(temp_struct_file):
     # sf._impl.add_address('test2', 20)
 
     sf.flush()
-    print(sf._impl.src)
+    # print(sf._impl.src)
 
-    print("#" * 150)
+    # print("#" * 150)
     sf.update_code([
         ('IntTypes.num_u8', Code(code='GG AA BB', offset=10, offset_size=4, begin=100, size=10))
     ])
 
     sf.flush()
-    print(sf._impl.src)
+    # print(sf._impl.src)

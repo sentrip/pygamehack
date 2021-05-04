@@ -5,15 +5,15 @@ from pybind11.setup_helpers import Pybind11Extension
 __version__ = "0.0.1"
 
 sources = [
-    'src/external/libdasm.c',
-    
     'src/Address.cpp',
     'src/Buffer.cpp',
     'src/Hack.cpp',
     'src/Instruction.cpp',
     'src/Process.cpp',
     'src/Variable.cpp',
-    'src/pygamehack.cpp',
+    'src/python/pygamehack.cpp',
+
+    'src/external/libdasm.c',
 ]
 
 setup(

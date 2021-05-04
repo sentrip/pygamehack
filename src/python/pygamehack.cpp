@@ -1,376 +1,11 @@
-#include <pybind11/pybind11.h>
-#include <pybind11/operators.h>
-#include <pybind11/stl.h>
-
-#include "Hack.h"
-#include "Buffer.h"
-#include "Address.h"
-#include "Variable.h"
-#include "Instruction.h"
+#include "PyVariableArray.h"
+#include "pywrappers.h"
+#include "pytostring.h"
 
 using namespace pygamehack;
 namespace py = pybind11;
 using namespace py::literals;
 
-//region Helpers
-
-#define FOR_EACH_INT_TYPE(F) \
-F(bool, "bool")\
-F(float, "float")\
-F(double, "double")\
-F(int8_t, "i8")\
-F(int16_t, "i16")\
-F(int32_t, "i32")\
-F(int64_t, "i64")\
-F(uint8_t, "u8")\
-F(uint16_t, "u16")\
-F(uint32_t, "u32")\
-F(uint64_t, "u64")
-
-
-template<typename T, typename Func>
-constexpr void define_class_getitem_pass_type_args_custom(py::class_<T>& cls,  Func&& func)
-{
-    py::object classmethod = py::globals()["__builtins__"]["classmethod"];
-    
-    py::cpp_function class_getitem(std::move(func));
-
-    cls.attr("__class_getitem__") = classmethod(class_getitem);
-}
-
-template<typename T>
-constexpr void define_class_getitem_pass_type_args(py::class_<T>& cls)
-{
-    define_class_getitem_pass_type_args_custom<T>(cls, 
-        [](py::object cls, py::object key){ return py::make_tuple(cls, key); });
-}
-
-template<typename T>
-void define_python_copy(py::class_<T>& cls)
-{
-    cls
-        .def("__copy__",  [](const T &self) {
-            return T(self);
-        })
-        .def("__deepcopy__", [](const T &self, py::dict) {
-            return T(self);
-        }, "memo"_a);
-}
-
-//endregion
-
-//region Python wrappers - Process
-
-static constexpr auto process_iter = [](py::object& callback)
-{
-    Process::iter([&callback](const ProcessInfo& info){
-        return py::cast<bool>(callback(info));
-    });
-};
-
-static constexpr auto process_follow = [](Process& self, uptr begin, const uptr_path& offsets)
-{
-    py::gil_scoped_release release;
-    return self.follow(begin, offsets);
-};
-
-static constexpr auto process_iter_regions = [](Process& self, uptr begin, usize size, py::object& callback, Memory::Protect prot, usize block_size)
-{
-    py::gil_scoped_release release;
-    self.iter_regions(begin, size, [&self, &callback](uptr rbegin, usize rsize, const u8* data) {
-        Buffer buffer{ self, (u8*)data, rsize };
-        py::gil_scoped_acquire  acquire_gil;
-        return py::cast<bool>(callback(rbegin, buffer));
-    }, prot, true, block_size);
-};
-
-//endregion
-
-//region Python wrappers - Buffer
-
-static constexpr auto buffer_read_from = [](Buffer& self, uptr src, usize size, uptr offset) 
-{
-    py::gil_scoped_release release;
-    return self.read_from(src, size, offset);
-};
-
-static constexpr auto buffer_write_to = [](Buffer& self, uptr dst, usize size, uptr offset) 
-{
-    py::gil_scoped_release release;
-    return self.write_to(dst, size, offset);
-};
-
-static constexpr auto buffer_read_buffer = [](Buffer& self, uptr offset, Buffer& dst) 
-{
-    py::gil_scoped_release release;
-    return self.read_buffer(offset, dst);
-};
-
-static constexpr auto buffer_write_buffer = [](Buffer& self, uptr offset, const Buffer& src) 
-{
-    py::gil_scoped_release release;
-    return self.write_buffer(offset, src);
-};
-
-static constexpr auto buffer_read_string = [](Buffer& self, uptr offset, usize size) 
-{
-    py::gil_scoped_release release;
-    return self.read_string(offset, size);
-};
-
-static constexpr auto buffer_read_dynamic_string = [](Buffer& self, uptr offset, usize size)
-{
-    return buffer_read_string(self, offset, size ? std::min<usize>(size, self.size() - offset) : std::min<usize>(self.strlen(offset), self.size() - offset));
-};
-
-static constexpr auto buffer_write_string = [](Buffer& self, uptr offset, const string& data) 
-{
-    py::gil_scoped_release release;
-    return self.write_string(offset, data);
-};
-
-//endregion
-
-//region Python wrappers - Hack
-
-static constexpr auto hack_find = [](Hack& self, i8 value, uptr begin, usize size) 
-{
-    py::gil_scoped_release release;
-    return self.find(value, begin, size);
-};
-
-static constexpr auto hack_scan = [](Hack& self, Hack::Scan& scan)
-{
-    py::gil_scoped_release release;
-    return self.scan(scan);
-};
-
-static constexpr auto hack_read_buffer = [](Hack& self, uptr src, Buffer& dst) 
-{
-    py::gil_scoped_release release;
-    return self.read_buffer(src, dst);
-};
-
-static constexpr auto hack_write_buffer = [](Hack& self, uptr dst, const Buffer& src) 
-{
-    py::gil_scoped_release release;
-    return self.write_buffer(dst, src);
-};
-
-static constexpr auto hack_read_string = [](Hack& self, uptr src, usize size) 
-{
-    py::gil_scoped_release release;
-    return self.read_string(src, size);
-};
-
-static constexpr auto hack_read_dynamic_string = [](Hack& self, uptr src, usize size, usize max_len)
-{
-    return hack_read_string(self, src, size ? size : self.find(0, src, max_len));
-};
-
-static constexpr auto hack_write_string = [](Hack& self, uptr dst, const string& data) 
-{
-    py::gil_scoped_release release;
-    return self.write_string(dst, data);
-};
-
-static constexpr auto hack_cheat_engine_load_pointer_scan_file = [](Hack& hack, const string& path, bool threaded)
-{
-    py::gil_scoped_release release;
-    return hack.cheat_engine_load_pointer_scan_file(path, threaded);
-};
-
-static constexpr auto hack_cheat_engine_save_pointer_scan_file = [](Hack& hack, const string& path, const Hack::CE::AddressPtrs& addresses, const Hack::CE::Settings& settings, bool single_file)
-{
-    py::gil_scoped_release release;
-    hack.cheat_engine_save_pointer_scan_file(path, addresses, settings, single_file);
-};
-
-static constexpr auto hack_scan_modify = [](Hack& self, Hack::Scan& scan, py::object& callback)
-{
-    py::gil_scoped_release release;
-    return self.scan_modify(scan, [&callback](Hack::Scan& s) {
-        py::gil_scoped_acquire acquire_gil;
-        return py::cast<bool>(callback(s));
-    });
-};
-
-static constexpr auto hack_scan_set_value = [](Hack::Scan& self, py::object& value)
-{
-    if (py::isinstance(value, py::globals()["str"])) {
-        self.set_value(value.cast<string>());
-    }
-    else {
-        u8 buffer[8]{};
-
-        if (py::isinstance(value, py::globals()["int"])) {
-            PGH_ASSERT(self.value_size <= 8, "Cannot set non-int value with a int");
-            auto v = value.cast<i64>();
-            memcpy(buffer, &v, self.value_size);
-        }
-        else if (py::isinstance(value, py::globals()["float"])) {
-            PGH_ASSERT(self.value_size <= 8, "Cannot set non-float value with a float");
-            auto v = value.cast<double>();
-            memcpy(buffer, &v, self.value_size);
-        }
-        else if (py::isinstance(value, py::globals()["bool"])) {
-            PGH_ASSERT(self.value_size == 1, "Cannot set non-bool value with a bool");
-            auto v = value.cast<bool>();
-            memcpy(buffer, &v, self.value_size);
-        }
-        else {
-            PGH_ASSERT(false, "Unrecognized type encountered when setting memory scan value");
-        }
-
-        self.set_value(self.type_id(), buffer, self.value_size);
-    }
-};
-
-//endregion
-
-//region Python wrappers - Instruction
-
-static constexpr auto instruction_iter = [](const string& raw_code, bool break_on_return, Instruction::Mode m)
-{
-    return py::make_iterator(
-        InstructionIter(raw_code, m, break_on_return),
-        InstructionIter(raw_code, m, break_on_return, UINT32_MAX)
-    );
-};
-
-static constexpr auto instruction_extract_searchable_bytes = [](const string& raw_code, usize last_instruction_offset)
-{
-    auto [code, offset, size] = Instruction::extract_searchable_bytes(raw_code, last_instruction_offset);
-    return py::make_tuple(py::bytes(code), offset, size);
-};
-
-//endregion
-
-//region Python wrappers - ToString
-
-template<typename T>
-struct TypeName { const char* operator()() const noexcept { return ""; } };
-
-#define F(T, name) template<> struct TypeName<T> { const char* operator()() const noexcept { return name; } };
-
-F(Buffer, "buf")
-F(PtrToBuffer, "p_buf")
-FOR_EACH_INT_TYPE(F)
-
-#undef F
-
-
-template <typename I> 
-string number_to_hex_string(I w, usize hex_len = sizeof(I)<<1)
-{
-    static const char* digits = "0123456789ABCDEF";
-    string rc(hex_len,'0');
-    for (usize i=0, j=(hex_len-1)*4 ; i<hex_len; ++i,j-=4)
-        rc[i] = digits[(w>>j) & 0x0f];
-    return rc;
-};
-
-
-static constexpr auto address_make_string = [](u64 value, Process::Arch arch)
-{ 
-    if (arch == Process::Arch::X86) {
-        return "0x" + number_to_hex_string<u32>(u32(value));
-    } else if (arch == Process::Arch::X64) {
-        return "0x" + number_to_hex_string<u64>(u64(value));
-    }
-    else {
-        char buf[128]{};
-        int size = sprintf(buf, "0x%llX", u64(value));
-        return string{buf};
-    }
-};
-
-static constexpr auto process_tostring = [](Process& v)
-{
-    string s{"Process(pid="};
-    s.append(std::to_string(v.pid()));
-    s.append(")");
-    return s;
-};
-
-static constexpr auto hack_tostring = [](Hack& v)
-{
-    string s{"Hack("};
-
-    s.append(")");
-    return s;
-};
-
-static constexpr auto address_tostring = [](Address& v)
-{
-    string s{"Address(0x"};
-    if (v.process().arch() == Process::Arch::X86) {
-        s.append(number_to_hex_string<u32>(u32(v.value())));
-    }
-    else {
-        s.append(number_to_hex_string<u64>(u64(v.value())));
-    }
-    switch(v.type()) {
-        case Address::Type::MANUAL: s.append(", Manual");break;
-        case Address::Type::STATIC: s.append(", Static"); break;
-        case Address::Type::DYNAMIC: s.append(", Dynamic"); break;
-    }
-    s.append(")");
-    return s;
-};
-
-static constexpr auto buffer_tostring = [](Buffer& v)
-{
-    string s{"Buffer(size="};
-    s.append(std::to_string(v.size()));
-    s.append(")");
-    return s;
-};
-
-template<typename T>
-static constexpr string variable_tostring(Variable<T>& v)
-{
-    string s{TypeName<T>()()};
-    s.append("(0x");
-    auto& addr = v.address();
-    if (addr.process().arch() == Process::Arch::X86) {
-        s.append(number_to_hex_string<u32>(u32(addr.value())));
-    }
-    else {
-        s.append(number_to_hex_string<u64>(u64(addr.value())));
-    }
-    s.append(")");
-    return s;
-}
-
-static constexpr auto instruction_tostring = [](Instruction& v)
-{
-    string s{"Instruction(type="};
-    FOR_EACH_INSTRUCTION_TYPE([&](Instruction::Type t, const char* name){ if (t == v.type) { s.append(name); } })
-    s.append(")");
-    return s;
-};
-
-static constexpr auto hack_cheat_engine_settings_tostring = [](Hack::CE::Settings& settings)
-{
-    string s{"CheatEnginePointerScanSettings(max_level="};
-    s.append(std::to_string(settings.max_level));
-    s.append(", max_offset=");
-    s.append(std::to_string(settings.max_offset));
-    s.append(", is_compressed=");
-    s.append(settings.is_compressed ? "True" : "False");
-    s.append(", is_aligned=");
-    s.append(settings.is_aligned ? "True" : "False");
-    s.append(", ends_with_offsets=[");
-    for (u32 i = 0; i < settings.ends_with_offsets.size(); ++i) {
-        if (i != 0) s.append(", ");
-        s.append(address_make_string(u64(settings.ends_with_offsets[i]), Process::Arch::NONE));
-    }
-    s.append("])");
-    return s;
-};
-
-//endregion
 
 //region Define funcs
 
@@ -410,7 +45,7 @@ void define_process(py::module& m)
         .export_values();
 
     proc_class    
-        .def("__repr__", process_tostring)
+        .def("__str__", process_tostring)
 
         .def_property_readonly(
             "arch", &Process::arch,
@@ -492,7 +127,7 @@ void define_address(py::module& m)
         .export_values();
 
     address_class
-        .def("__repr__", address_tostring)
+        .def("__str__", address_tostring)
 
         .def(
             py::init(&Address::Manual), py::keep_alive<2, 1>(),
@@ -604,7 +239,7 @@ void define_buffer(py::module& m)
      });
 
     buffer_class
-        .def("__repr__", buffer_tostring)
+        .def("__str__", buffer_tostring)
         
         .def(
             py::init<Hack&, usize>(), py::keep_alive<2, 1>(),
@@ -716,6 +351,8 @@ void define_hack_scan(py::module& m)
     py::class_<Hack::Scan> scan_class(m, "MemoryScan");
 
     scan_class
+        .def("__str__", hack_scan_tostring)
+
         .def_static("str", [](const string& v, uptr b, usize s, usize m, bool r, bool w, bool e, bool rx, bool t){ return Hack::Scan(v, b, s, m, r, w, e, rx, t); },
                 "value"_a, "begin"_a, "size"_a, py::kw_only(), "max_results"_a=0,
                 "read"_a=true, "write"_a=false, "execute"_a=false,
@@ -764,7 +401,7 @@ void define_hack_cheat_engine(py::module& m)
 {
     py::class_<Hack::CE::Settings>(m, "CheatEnginePointerScanSettings")
         .def(py::init<>())
-        .def("__repr__", hack_cheat_engine_settings_tostring)
+        .def("__str__", hack_cheat_engine_settings_tostring)
         .def_readwrite("max_level", &Hack::CE::Settings::max_level,
             "Maximum number of offsets per pointer-scan result (default: 7)")
         .def_readwrite("max_offset", &Hack::CE::Settings::max_offset,
@@ -788,7 +425,7 @@ void define_hack(py::module& m)
     auto& hack_class = py::class_<Hack>(m, "Hack");
 
     hack_class
-        .def("__repr__", hack_tostring)
+        .def("__str__", hack_tostring)
 
         .def(py::init<>())
         
@@ -908,6 +545,20 @@ void define_hack(py::module& m)
 }
 
 
+template<typename Var>
+void define_const_variable(py::module& m, const char* type_name)
+{
+    static constexpr auto do_fail = [](){ throw std::exception{"Cannot write to a constant variable"}; };
+
+    struct Derived : public Var { using Var::Var; };
+
+    py::class_<Derived, Var>(m, type_name)
+        .def("flush", [](Derived& v){ do_fail(); })
+        .def("write", [](Derived& v, py::object&){ do_fail(); })
+        .def("__setitem__", [](Derived& v, py::object&, py::object&){ do_fail(); });
+}
+
+
 template<typename T, usize N>
 void define_variable(py::module& m, const char(&type_name)[N])
 {
@@ -924,7 +575,7 @@ void define_variable(py::module& m, const char(&type_name)[N])
     }
 
     variable_class
-        .def("__repr__", variable_tostring<T>)
+        .def("__str__", variable_tostring<T>)
 
         .def(
             py::init<Address&>(), py::keep_alive<2, 1>(),
@@ -951,17 +602,6 @@ void define_variable(py::module& m, const char(&type_name)[N])
         .def(
             "reset", &Variable<T>::reset,
                 "Reset the value of the local storage to the default value when originally constructed");
-
-    // if constexpr(std::is_same_v<T, string>) {
-    //     variable_class
-    //         .def_property_readonly(
-    //             "length", &Variable<string>::size,
-    //                 "Return the length of the stored string")
-    //         .def(
-    //             "resize", &Variable<string>::resize,
-    //                 "Resize the stored string",
-    //                 "size"_a);
-    // }
 }
 
 
@@ -981,14 +621,14 @@ void define_variable_buffer(py::module& m, const char(&type_name)[N])
      });
 
     variable_class
-        .def("__repr__", variable_tostring<T>)
+        .def("__str__", variable_tostring<T>)
 
         .def(
             py::init<Address&, usize>(), py::keep_alive<2, 1>(),
                 "Create a buffer variable of the given size from the given address",
                 "address"_a, "size"_a)
 
-       .def(
+        .def(
             py::init<T&, uptr, usize>(), py::keep_alive<2, 1>(),
                 "Create a buffer view variable of the given size from the given parent buffer",
                 "parent"_a, "offset"_a, "size"_a)
@@ -1016,7 +656,7 @@ void define_variable_buffer(py::module& m, const char(&type_name)[N])
         .def(
             "read", &T::read, py::return_value_policy::reference,
                 "Read into local storage from the memory at the address of this variable and return the stored buffer. If size=0, the entire buffer is read.",
-                "offset"_a=0, "size"_a=0)
+                "size"_a=0, "offset"_a=0)
 
         .def(
             "write", &T::write,
@@ -1026,21 +666,119 @@ void define_variable_buffer(py::module& m, const char(&type_name)[N])
         .def(
             "flush", &T::flush,
                 "Write to the memory at the address of this variable from local storage. If size=0, the entire buffer is written.",
-                "offset"_a=0, "size"_a=0)
+                "size"_a=0, "offset"_a=0)
 
         .def(
             "reset", &T::reset,
                 "Clear the memory of the local storage buffer");
 
+
+     if constexpr(std::is_same_v<T, VariableString>) {
+         variable_class
+             .def("__len__", &VariableString::strlen)
+             .def("__iter__", [](VariableString& v){ return py::make_iterator((const char*)v.get().data(), (const char*)(v.get().data() + v.get().size())); }, py::keep_alive<0, 1>())
+             .def("__contains__", [](VariableString& v, const string& s){ return v.get_view().find(s) != string::npos; })
+             .def("__reversed__", [](VariableString& v, const string& s){ return string{v.get_view().rbegin(), v.get_view().rend()}; })
+             .def("__setitem__", [](VariableString& v, usize n, const string& s){ if (n >= s.size()) throw py::index_error(); v.get().data()[n] = s[0]; })
+             .def("__getitem__", [](VariableString& v, usize n){ if (n >= v.size()) throw py::index_error(); return string{(const char*)(v.get().data() + n), 1}; })
+             .def("__getitem__", [](VariableString& v, py::slice slice){
+                 py::ssize_t start, stop, step, slicelength;
+                 if (!slice.compute(v.size(), &start, &stop, &step, &slicelength))
+                 throw py::error_already_set();
+                 return v.slice(start, stop, static_cast<i64>(step));
+             });
+
+         string const_name = "c_" + string{type_name};
+         define_const_variable<VariableString>(m, const_name.c_str());
+     }
+}
+
+
+template<typename T, usize N>
+void define_variable_array(py::module& m, const char(&type_name)[N])
+{
+    py::class_<T> variable_class(m, type_name, py::buffer_protocol());
+
+    define_class_getitem_pass_type_args_custom<T>(variable_class, [](py::object cls, py::tuple key){
+        // TODO: Assert array getitem args are correct
+        py::tuple tup(3);
+        tup[0] = cls;
+        tup[1] = key[0];
+        tup[2] = key[1];
+        return tup;
+    });
+
+    variable_class.def_buffer([](T &v) -> py::buffer_info {
+        return py::buffer_info(
+            v.buffer().data(),                       // Pointer to buffer
+            { py::ssize_t(v.buffer().size()) },      // Buffer dimensions
+            { 1 }                                    // Stride (in bytes) for each dimension
+        );
+     });
+
+     variable_class
+        .def(
+            py::init(&T::create),
+                "Create a array variable of the given size",
+                "address"_a, "size"_a)
+
+        .def_property_readonly(
+            "address", &T::address, py::return_value_policy::reference,
+                "Return the address associated to this variable")
+
+        .def_property_readonly(
+            "is_view", &T::is_view,
+                "Is this variable a view into another variable")
+
+        .def_property_readonly(
+            "offset_in_parent", &T::offset_in_parent,
+                "Return the offset of this variables address with respect to the parent variable")
+
+        .def_property_readonly(
+            "parent", &T::parent, py::return_value_policy::reference,
+                "Return the parent variable if this variable is a buffer view. Raises error for non-view variables.")
+
+        .def(
+            "get", &T::get, py::return_value_policy::reference,
+                "Return the stored buffer")
+
+        .def(
+            "read", &T::read, py::return_value_policy::reference,
+                "Read into local storage from the memory at the address of this variable and return the stored buffer. If n=0, the entire array is read.",
+                "n"_a=0, "starting_at"_a=0)
+
+        .def(
+            "write", &T::write,
+                "Write the given values to local storage starting at the given position",
+                "values"_a, "starting_at"_a=0u)
+
+        .def(
+            "flush", &T::flush,
+                "Write to the memory at the address of this variable from local storage. If n=0, the entire array is written.",
+                "n"_a=0, "starting_at"_a=0)
+
+        .def(
+            "reset", &T::reset,
+                "Clear the memory of the local storage buffer")
+
+        .def("__len__", &T::length)
+        .def("__iter__", &T::iter, py::keep_alive<0, 1>())
+        .def("__getitem__", [](T& v, usize n){ return v.getitem(n); })
+        .def("__getitem__", [](T& v, py::slice slice){ return v.getitem(slice); })
+        .def("__setitem__", &T::setitem);
+
+     string const_name = "c_" + string{type_name};
+     define_const_variable<T>(m, const_name.c_str());
 }
 
 
 void define_variables(py::module& m)
 {   
     define_variable<Ptr>(m, "ptr");
-    // define_variable<string>(m, "str");
     define_variable_buffer<VariableBuffer>(m, "buf");
-    define_variable_buffer<VariablePtrToBuffer>(m, "p_buf");
+//    define_variable_buffer<VariablePtrToBuffer>(m, "p_buf");
+    define_variable_buffer<VariableString>(m, "str");
+    define_variable_array<PyVariableArray>(m, "arr");
 
     #define F(type, name) define_variable<type>(m, name);
     FOR_EACH_INT_TYPE(F)
@@ -1077,7 +815,8 @@ void define_instruction(py::module& m)
     inst_class.attr("Operand") = op_class;
 
     py::enum_<Instruction::Type> inst_type(inst_class, "Type");
-    FOR_EACH_INSTRUCTION_TYPE([&](Instruction::Type t, const char* name){ inst_type.value(name, t); })
+    auto def_inst_type = [&](Instruction::Type t, const char* name){ inst_type.value(name, t); };
+    FOR_EACH_INSTRUCTION_TYPE(def_inst_type)
     inst_type.export_values();
 
     py::enum_<Instruction::Mode>(inst_class, "Mode")
@@ -1113,7 +852,7 @@ void define_instruction(py::module& m)
         .def_readwrite("iop_read", &Instruction::iop_read, "Mask of affected implied registers (read)")
         
         .def(
-            "__repr__", instruction_tostring)
+            "__str__", instruction_tostring)
 
         .def(
             "to_string", &Instruction::to_string,
@@ -1166,3 +905,269 @@ PYBIND11_MODULE(c, m)
 
     define_instruction(m);
 }
+
+// pygamehack.c.str Python reference implementation
+//
+/*
+
+from typing import Union
+
+from pygamehack.c import buf
+from ..variable import IBufferContainerVariable, IConstVariable
+
+
+class String(buf, IBufferContainerVariable):
+    """
+    String Variable that implements the IContainerVariable Interface
+    """
+    __slots__ = ()
+
+    def get(self) -> str:
+        size = super().get().strlen()
+        return super().get().read_string(0, size) if size else ''
+
+    def read(self) -> str: # noqa
+        super().read()
+        size = super().get().strlen()
+        super().get().resize(size)
+        return super().get().read_string(0, size) if size else ''
+
+    def write(self, value: str): # noqa
+        if len(value) > super().get().size:
+            raise RuntimeError(f'str[{len(value)}] too large to fit in buffer[{super().get().size}]')
+        super().get().write_string(0, value)
+
+    def __getitem__(self, i: Union[int, slice]):
+        if isinstance(i, slice):
+            start, stop, step = i.indices(super().get().size)
+            assert step == 1, 'Do not support step>1 for string slicing'
+            if step == 1:
+                return super().get().read_string(start, stop)
+            else:
+                return super().get().read_string(start, stop)[0:-1:step]
+        else:
+            self._check_bounds(i)
+            return chr(super().get().read_i8(i))
+
+    def __setitem__(self, i: int, value: str):
+        assert len(value) == 1
+        self._check_bounds(i)
+        super().get().write_i8(i, ord(value))
+
+    def __iter__(self):
+        for i in range(super().get().strlen()):
+            yield chr(super().get().read_i8(i))
+
+    def __len__(self):
+        return super().get().strlen()
+
+    def __hash__(self):
+        return hash(super().get().read_string())
+
+    def __eq__(self, other):
+        if isinstance(other, String):
+            return object.__eq__(self, other)
+        else:
+            return isinstance(other, str) and len(other) == super().get().strlen() and super().get().read_string() == other
+
+    def _check_bounds(self, i):
+        assert i < super().get().size, f"String index {i} out of bounds ({super().get().size})"
+
+
+class CString(IConstVariable, String):
+    """
+    Const version of String Variable
+    """
+    __slots__ = ()
+
+
+*/
+
+// pygamehack.c.arr Python reference implementation
+//
+/*
+
+import copy
+from typing import Any, List, Optional, TypeVar, Tuple, Union
+
+from pygamehack.c import Address, buf
+from ..struct_meta import StructMeta, StructType
+from ..variable import IBufferContainerVariable, IConstVariable
+
+
+T = TypeVar('T')
+
+
+class Array(buf, IBufferContainerVariable):
+    """
+    Array Variable that implements the IContainerVariable Interface
+    """
+    __slots__ = ('__value_type', '__values', '__read', '__write')
+
+    @property
+    def value_type(self) -> StructType:
+        return copy.copy(self.__value_type)
+
+    def get(self) -> 'Array':
+        return self
+
+    def read(self, n: int = 0, starting_at: int = 0) -> 'Array':
+        super().read(starting_at * self.__value_type.size, n * self.__value_type.size)
+        return self
+
+    def write(self, values: List[T], starting_at: int = 0):
+        if self.__values is None:
+            self._write_buffer(values, starting_at)
+        else:
+            self._write_values(values, starting_at)
+
+    def flush(self, n: int = 0, starting_at: int = 0):
+        super().flush(n * self.__value_type.size, starting_at * self.__value_type.size)
+
+    def reset(self):
+        if self.__values is not None:
+            self.__values = [_ArrayLazyElement() for _ in range(len(self))]
+        super().get().clear()
+
+    @classmethod
+    def __class_getitem__(cls, item: Tuple[Any, int]):
+        if not isinstance(item, tuple) or StructType.is_compound_type_tuple(item):
+            raise RuntimeError('Forgot to provide size in array definition')
+        return StructType(item[0], StructType.LAZY_SIZE, item[1], container_type=cls)
+
+    def __init__(self, address: Optional[Address], size: int, **kwargs):
+        assert 'type' in kwargs, 'Must provide a value type when initializing an Array'
+
+        self.__value_type = kwargs['type']
+
+        if StructMeta.check_buffer_view_kwargs(address, kwargs):
+            super().__init__(kwargs['parent_buffer'], kwargs['offset_in_parent'], size * self.__value_type.size)  # noqa
+        else:
+            super().__init__(address, size * self.__value_type.size)
+
+        if StructType.is_basic_type(self.value_type):
+            self.__values: Optional[List[Any]] = None
+            type_name = self.value_type.__name__
+            type_size = self.__value_type.size
+            read_method = getattr(super().get(), 'read_' + type_name)
+            write_method = getattr(super().get(), 'write_' + type_name)
+            self.__read = lambda i: read_method(i * type_size)
+            self.__write = lambda i, v: write_method(i * type_size, v)
+        else:
+            self.__values = [_ArrayLazyElement() for _ in range(size)]
+            self.__read = None
+            self.__write = None
+
+    def __getitem__(self, i: Union[int, slice]) -> T:
+        if self.__values is None:
+            return self._getitem_buffer(i)
+        else:
+            return self._getitem_values(i)
+
+    def __setitem__(self, i: int, value: T):
+        if self.__values is None:
+            self._setitem_buffer(i, value)
+        else:
+            self._setitem_values(i, value)
+
+    def __iter__(self):
+        if self.__values is not None:
+            return self.__values.__iter__()
+        else:
+            return self._iter_buffer()
+
+    def __len__(self):
+        return super().get().size / self.__value_type.size
+
+    def __hash__(self):
+        return hash(tuple(v for v in self))
+
+    def __eq__(self, other):
+        if isinstance(other, Array):
+            return object.__eq__(self, other)
+        else:
+            return isinstance(other, list) \
+                   and len(other) == len(self) \
+                   and all(v == other[i] for i, v in enumerate(self))
+
+    def _check_bounds(self, i):
+        assert i < super().get().size, f"Array index {i} out of bounds ({super().get().size})"
+
+    def _create_element(self, i):
+        return self.__value_type(None, buffer=True, parent_buffer=self, offset_in_parent=i * self.__value_type.size)
+
+    def _exists(self, i):
+        return not isinstance(self.__values[i], _ArrayLazyElement)
+
+    def _iter_buffer(self, sl: slice = slice(0, -1)):
+        start, stop, step = sl.indices(len(self))
+        for idx in range(start, stop, step):
+            yield self.__read(idx)
+
+    def _getitem_buffer(self, i):
+        if isinstance(i, slice):
+            return self._iter_buffer(i)
+        else:
+            return self.__read(i)
+
+    def _setitem_buffer(self, i, value):
+        self.__write(i, value)
+
+    def _getitem_values(self, i):
+        if isinstance(i, slice):
+            return self.__values[i]
+        else:
+            self._check_bounds(i)
+
+            if not self._exists(i):
+                self.__values[i] = self._create_element(i)
+
+            if StructType.is_buffer_subclass(self.__value_type)\
+                    or (isinstance(self.__value_type, StructType) and self.__value_type.is_container):
+                return self.__values[i].get()
+            else:
+                return self.__values[i].read()
+
+    def _setitem_values(self, i, value):
+        self._check_bounds(i)
+
+        if i >= len(self.__values):
+            self.__values.extend(_ArrayLazyElement() for _ in range(i - len(self.__values) + 1))
+
+        if not self._exists(i):
+            self.__values[i] = self._create_element(i)
+
+        self.__values[i].write(value)
+
+    def _write_buffer(self, values, starting_at):
+        for i, v in enumerate(values):
+            self.__write(starting_at + i, v)
+
+    def _write_values(self, values, starting_at):
+        for i in range(len(values), starting_at + len(values)):
+            self.__values.append(self._create_element(i))
+
+        for i, v in enumerate(values):
+            self.__values[starting_at + i].write(v)
+
+
+class CArray(IConstVariable, Array):
+    """
+    Const version of Array Variable
+    """
+    __slots__ = ()
+
+
+class _ArrayLazyElement(object):
+    __slots__ = ()
+
+    def get(self):
+        raise RuntimeError('Attempt to access _ArrayLazyElement')
+
+    def read(self):
+        raise RuntimeError('Attempt to access _ArrayLazyElement')
+
+    def write(self, v):
+        raise RuntimeError('Attempt to access _ArrayLazyElement')
+
+*/

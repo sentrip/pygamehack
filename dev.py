@@ -32,3 +32,9 @@ if __name__ == '__main__':
 
     elif sys.argv[1] == 'cloc':
         os.system('cloc src/ pygamehack/ pygamehack_gui/ %s --exclude-dir external --exclude-lang=XML,CMake' % ' '.join(sys.argv[2:]))
+
+    elif sys.argv[1] == 'cov':
+        os.system('coverage run --source "pygamehack" -m pytest')
+        os.system('coverage html')
+        import webbrowser
+        webbrowser.open(os.getcwd() + '/htmlcov/index.html')

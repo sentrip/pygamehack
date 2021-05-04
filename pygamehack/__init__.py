@@ -1,33 +1,37 @@
 from pygamehack.c import *
 from .struct import Struct
+from .reclassnet import ReClassNet
+from .struct_file import StructFile
 from .struct_meta import TypeWrapper, StructType
 from .variable import Variable, ConstVariable, ListVariable, DictVariable
-from .types import String as str, CString as c_str, Array as arr, CArray as c_arr
+from .code import Code, CodeFindConfig, CodeFindTarget, CodeFinder, CodeScanResult, CodeScanner
 
 __all__ = [
     # pygamehack.c
-    'Address',
-    'Buffer',
-    'Hack',
-    'Process',
-    'Instruction',
-    'MemoryScan',
+    'Address', 'Buffer', 'Hack',
+    'Process', 'ProcessInfo',
+    'Instruction', 'Operand', 'MemoryScan',
+    'CheatEnginePointerScanSettings',
+    # pygamhack.c variable types
     'i8', 'i16', 'i32', 'i64',
     'u8', 'u16', 'u32', 'u64',
     'bool', 'float', 'double',
-    'ptr', 'buf', 'p_buf',
-    'int', 'uint', 'usize',
+    'ptr', 'int', 'uint', 'usize',
+    'buf', 'str', 'c_str', 'arr', 'c_arr',
     # pygamehack
-    'Struct', 'TypeWrapper', 'StructType',
-    'Variable', 'ConstVariable', 
-    'ListVariable', 'DictVariable', 
-    # pygamehack types
-    'str', 'c_str', 'arr', 'c_arr'
+    'Struct', 'StructType', 'TypeWrapper',
+    'Variable', 'ConstVariable',
+    'ListVariable', 'DictVariable',
+    # pygamehack extras
+    'Code', 'StructFile', 'ReClassNet',
+    'CodeFinder', 'CodeFindConfig', 'CodeFindTarget',
+    'CodeScanner', 'CodeScanResult',
 ]
 
 
 #region Extensions
 
+# Process.all() iterator that can be used in generator expressions
 def _all_processes():
     """
     Iterator that lists the running processes on the system
@@ -38,5 +42,17 @@ def _all_processes():
         yield info
 
 Process.all = _all_processes
+
+
+# Array __class_getitem__ return StructType instead of tuple
+_old_arr_getitem = arr.__class_getitem__
+
+
+def _convert_arr_getitem(typ):
+    t = _old_arr_getitem(typ)
+    return StructType(t[1], StructType.LAZY_SIZE, t[2], container_type=t[0])
+
+
+arr.__class_getitem__ = _convert_arr_getitem
 
 #endregion

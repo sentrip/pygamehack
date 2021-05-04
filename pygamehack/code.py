@@ -9,7 +9,7 @@ from pygamehack.c import Address, Instruction, Hack, MemoryScan
 from .gdb import GDB, Watch
 from .struct import Struct
 
-__all__ = ['Code', 'CodeFindConfig', 'CodeFindTarget', 'CodeFinder', 'CodeScanner']
+__all__ = ['Code', 'CodeFindConfig', 'CodeFindTarget', 'CodeFinder', 'CodeScanResult', 'CodeScanner']
 
 __doc__ = """
 When defining structs, you must hard code the offsets of each struct.

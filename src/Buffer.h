@@ -65,6 +65,8 @@ public:
     bool        operator==(const Buffer& other) const;
     bool        operator!=(const Buffer& other) const;
 
+    void unsafe_force_resize(usize size) { if(_owns_memory) { resize(size); } else { _size = size; } }
+
 private:
     static constexpr usize SMALL_SIZE = 48;
 

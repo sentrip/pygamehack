@@ -13,6 +13,7 @@ public:
     using ScanModifyLoopFunc = std::function<bool(Scan&)>;
 
     Hack();
+    ~Hack();
 
     // Properties
     const Process&      process() const;
@@ -83,6 +84,7 @@ public:
         Scan(u64 type_hash, const u8* data, usize value_size, uptr begin, usize size, usize max_results = 0, bool read = true, bool write = false, bool execute = false, bool regex = false, bool threaded=false);
         ~Scan();
         const u64 type_id() const;
+        const char* type_name() const;
         const u8* data() const;
         void set_value(u64 type_hash, const u8* data, usize value_size);
 
