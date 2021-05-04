@@ -19,8 +19,8 @@ public:
     const Process&      process() const;
 
     // Attach/detach
-    void                attach(u32 process_id);
-    void                attach(const string& process_name);
+    bool                attach(u32 process_id, bool read_only = false);
+    bool                attach(const string& process_name, bool read_only = false);
     void                detach();
 
 	// Memory scan
@@ -87,6 +87,7 @@ public:
         const char* type_name() const;
         const u8* data() const;
         void set_value(u64 type_hash, const u8* data, usize value_size);
+        Memory::Protect requested_protection() const;
 
     private:
         static constexpr u64 BUFFER_SIZE = 64;

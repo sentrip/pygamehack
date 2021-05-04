@@ -33,6 +33,10 @@ class IVariable(object):
     def write(self, value):
         raise NotImplementedError
 
+    @abstractmethod
+    def reset(self):
+        raise NotImplementedError
+
 
 class IConstVariable(object):
     """
@@ -45,10 +49,13 @@ class IConstVariable(object):
         class CMyFancyVariable(ConstVariable, MyFancyVariable):
             pass
     """
+    def write(self, value):
+        raise RuntimeError('Cannot write to a constant variable')
+
     def flush(self):
         raise RuntimeError('Cannot write to a constant variable')
 
-    def write(self, value):
+    def reset(self):
         raise RuntimeError('Cannot write to a constant variable')
 
     def __setitem__(self, key, value):

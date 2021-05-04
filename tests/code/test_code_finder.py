@@ -14,8 +14,6 @@ def test_code_finder(hack, app, set_cleanup):
         flag: gh.uint = 0x8
         update: gh.uint = 0xC
 
-    gh.Struct.define_types(app.arch)
-
     hack.attach(app.pid)
 
     t = TestProgram(gh.Address(hack, app.addr.marker))

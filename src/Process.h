@@ -61,7 +61,7 @@ public:
     enum class Arch { X86, X64, NONE };
 
     using iter_callback                 = std::function<bool(const ProcessInfo&)>;
-    using iter_region_callback          = std::function<bool(uptr, usize, const u8*)>;
+    using iter_region_callback          = std::function<bool(uptr, usize, Memory::Protect, const u8*)>;
 
     Process() = default;
     ~Process();
@@ -74,8 +74,10 @@ public:
 
 	bool is_attached() const;
 
-	bool attach(u32 process_id);
-	bool attach(const string& process_name);
+	bool is_read_only() const;
+
+	bool attach(u32 process_id, bool read_only = false);
+	bool attach(const string& process_name, bool read_only = false);
 
     void detach();
 

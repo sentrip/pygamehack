@@ -66,10 +66,10 @@ static constexpr auto process_follow = [](Process& self, uptr begin, const uptr_
 static constexpr auto process_iter_regions = [](Process& self, uptr begin, usize size, py::object& callback, Memory::Protect prot, usize block_size)
 {
     py::gil_scoped_release release;
-    self.iter_regions(begin, size, [&self, &callback](uptr rbegin, usize rsize, const u8* data) {
+    self.iter_regions(begin, size, [&self, &callback](uptr rbegin, usize rsize, Memory::Protect protect, const u8* data) {
         Buffer buffer{ self, (u8*)data, rsize };
         py::gil_scoped_acquire  acquire_gil;
-        return py::cast<bool>(callback(rbegin, buffer));
+        return py::cast<bool>(callback(rbegin, protect, buffer));
     }, prot, true, block_size);
 };
 

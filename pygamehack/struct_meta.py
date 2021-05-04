@@ -1,19 +1,18 @@
 import inspect
 from abc import ABCMeta, abstractmethod
-from typing import Union
 import pygamehack.c as cgh
 
 __all__ = [
     # Main API
-    'StructMeta', 'StructInfo', 'StructType', 'TypeWrapper',
+    'StructMeta', 'StructType', 'TypeWrapper',
     # Info
-    'StructDefinition', 'StructField',
+    'StructInfo', 'StructDefinition',
     # Low level
-    'StructData', 'StructMethods', 'StructProperty', '_sort_by_dependency'
+    'StructData', 'StructDependencies'
 ]
 
-# region StructMeta
 
+# region StructMeta
 
 class StructMeta(ABCMeta):
     """
@@ -25,8 +24,6 @@ class StructMeta(ABCMeta):
         class MyStruct(metaclass=gh.StructMeta):
             value_1: gh.uint = 0x1C
 
-        gh.StructMeta.define_types()
-
     Nested struct usage:
         import pygamehack as gh
 
@@ -36,77 +33,33 @@ class StructMeta(ABCMeta):
 
         class MyStructParent(metaclass=gh.StructMeta): # Parent
             my_struct: MyStructChild = 0x1C
-
-        gh.StructMeta.define_types()
     """
-
-    size = 0
-
-    _to_define = []
-    _defined = {}
-    _defined_by_name = {}
-    _dependencies = {}
-    _arch = cgh.Process.Arch.NONE
-    _ptr_size = 0
-
-    @staticmethod
-    def define_types(arch: int):
-        assert arch == 32 or arch == 64, "Architecture must be 32 or 64"
-        StructMeta._ptr_size = 4 if arch == 32 else 8
-        StructMeta._arch = cgh.Process.Arch.x86 if arch == 32 else cgh.Process.Arch.x64
-
-        already_defined = {}
-
-        for cls in StructMeta._to_define:
-            if cls in StructMeta._defined:
-                already_defined[cls] = True
-                continue
-
-            definition = StructDefinition(cls)
-            StructMeta._defined[cls] = definition
-            StructMeta._defined_by_name[cls.__name__] = definition
-            StructMeta._dependencies[cls.__name__] = definition.parse_dependencies()
-
-        _sort_by_dependency(StructMeta._to_define, StructMeta._dependencies,
-                            lambda t: t.__name__)
-
-        for cls in StructMeta._to_define:
-            if cls in already_defined:
-                continue
-            StructMeta.struct(cls).parse_fields()
-
-        for cls in StructMeta._to_define:
-            if cls in already_defined:
-                continue
-            StructMeta.struct(cls).parse_size()
-
-        StructMeta._to_define.clear()
-        StructMeta._ptr_size = 0
-        StructMeta._arch = cgh.Process.Arch.NONE
 
     @staticmethod
     def clear_types():
-        StructMeta._to_define.clear()
-        StructMeta._defined.clear()
-        StructMeta._defined_by_name.clear()
-        StructMeta._dependencies.clear()
+        _StructDefinitions.to_define.clear()
+        for definitions in [_defined_32, _defined_64]:
+            definitions.defined.clear()
+            definitions.defined_by_name.clear()
+            definitions.dependencies.clear()
 
     @staticmethod
-    def is_struct(cls):
+    def is_struct(cls) -> bool:
         return hasattr(cls, '__is_struct_type') or hasattr(cls.__class__, '__is_struct_type')
 
     @staticmethod
-    def struct(cls: 'StructMeta'):
-        return StructMeta._defined.get(cls, None)
+    def struct(cls: 'StructMeta', arch: int) -> 'StructDefinition':
+        return _StructDefinitions.defs(arch).defined.get(cls, None)
 
     @staticmethod
-    def named(name: str):
-        return StructMeta._defined_by_name.get(name, None)
+    def named(name: str, arch: int) -> 'StructDefinition':
+        return _StructDefinitions.defs(arch).defined_by_name.get(name, None)
 
     @staticmethod
     def iter_variables(struct):
         if hasattr(struct, 'buffer'):
-            definition = StructMeta._defined.get(struct.__class__, None)
+            arch = 32 if struct.buffer.address.hack.process.arch == cgh.Process.Arch.x86 else 64
+            definition = _StructDefinitions.defs(arch).defined.get(struct.__class__, None)
             if definition is not None:
                 for name, field in definition.fields.items():
                     yield name, field
@@ -143,6 +96,17 @@ class StructMeta(ABCMeta):
             raise RuntimeError("You must either provide an address, or buffer view kwargs, not both")
         return False
 
+    @staticmethod
+    def get_architecture_from_address_kwargs(address, kwargs) -> int:
+        if address is not None:
+            if not address.hack.process.attached:
+                raise RuntimeError('You must first attach to a running process before creating instances of Structs')
+            process = address.hack.process
+        else:
+            StructMeta.check_buffer_view_kwargs(address, kwargs)
+            process = kwargs['parent_buffer'].buffer.address.hack.process
+        return 32 if process.arch == cgh.Process.Arch.x86 else 64
+
     # Called when a new TYPE is DEFINED (before anything interesting happens)
     def __new__(mcs, name, bases, attrs, **kwargs):
         if name == 'Struct' or not kwargs.get('define', True):
@@ -150,6 +114,7 @@ class StructMeta(ABCMeta):
 
         definition = {k: v for k, v in attrs.items() if StructDefinition.is_struct_offset(v) or k == '__init__'}
         definition['_info'] = StructInfo()
+        definition['_info'].arch = kwargs.get('architecture', 'all')
         definition['__is_struct_type'] = True  # dummy property used to detect struct types
 
         subclass = super().__new__(mcs, name, bases, definition)
@@ -161,24 +126,22 @@ class StructMeta(ABCMeta):
             super().__init__(name, bases, attrs)
             return
 
-        StructMeta._to_define.append(cls)
-
-        cls.__annotations__ = attrs.get('__annotations__', {})
-        cls._info = getattr(cls, '_info', StructInfo())
-        cls._info.offsets = {k: v for k, v in attrs.items() if StructDefinition.is_struct_offset(v)}
-        cls._info.line_defined = inspect.getouterframes(inspect.currentframe())[1].lineno  # gets line of class def
-        cls._info.is_custom_type = kwargs.pop('custom', cls._info.is_custom_type)
+        _StructDefinitions.to_define.append(cls)
+        _StructDefinitions.add_definitions_for_class(cls)
+        _StructDefinitions.configure_class(cls, attrs, kwargs)
 
         if not cls._info.is_custom_type:
-            cls.__init__ = StructMethods.init
-            cls.__str__ = StructMethods.str
-            cls.read = StructMethods.read
-            cls.write = StructMethods.write
-            cls.flush = StructMethods.flush
-            cls.reset = StructMethods.reset
+            cls.__init__ = _StructMethods.init
+            cls.__str__ = _StructMethods.str
+            cls.read = _StructMethods.read
+            cls.write = _StructMethods.write
+            cls.flush = _StructMethods.flush
+            cls.reset = _StructMethods.reset
             cls.dataclass = lambda **kw: StructData.create(cls, **kw)
 
         super().__init__(name, bases, attrs, **kwargs)
+
+        _StructDefinitions.check_dependencies_define(cls)
 
 
 # endregion
@@ -237,6 +200,16 @@ class StructDefinition(object):
     def parse_dependencies(self):
         dependencies = set()
 
+        # Ensure derived inherit the fields of their parents
+        StructDefinition._update_with_dicts_of_bases(
+            self.cls, _StructDefinitions.arch,
+            self.cls.__annotations__, lambda s: s.cls.__annotations__)
+
+        StructDefinition._update_with_dicts_of_bases(
+            self.cls, _StructDefinitions.arch,
+            self.offsets, lambda s: s.offsets)
+
+        # Parse dependencies
         for name, t in self.cls.__annotations__.items():
             if StructType.is_basic_type(t):
                 continue
@@ -259,7 +232,7 @@ class StructDefinition(object):
 
         # Parse offsets
         index = 0
-        for name, offsets in self.info.offsets.items():
+        for name, offsets in self.offsets.items():
             self.offsets[name] = offsets if isinstance(offsets, list) else [offsets]
             field_indexes[name] = index
             index += 1
@@ -267,11 +240,11 @@ class StructDefinition(object):
         # Parse types
         for name, t in self.cls.__annotations__.items():
             # Create field
-            field = StructField(name, t, self, field_indexes[name])
+            field = _StructField(name, t, self, field_indexes[name])
             self.fields[name] = field
 
             # Create property for field
-            prop = StructProperty(field, field.getter, field.setter)
+            prop = _StructProperty(field, field.getter, field.setter)
             setattr(self.cls, name, prop)
 
             # Pointers require an extra read with no offset to get the value pointed at by the address
@@ -290,6 +263,13 @@ class StructDefinition(object):
     def is_struct_offset(value):
         return isinstance(value, int) or (isinstance(value, list) and all(isinstance(i, int) for i in value))
 
+    @staticmethod
+    def _update_with_dicts_of_bases(cls, arch, all_data, get_dict):
+        for child in cls.__bases__:
+            if StructMeta.is_struct(child):
+                all_data.update(get_dict(StructMeta.struct(child, arch)))
+                StructDefinition._update_with_dicts_of_bases(child, arch, all_data, get_dict)
+
 
 # endregion
 
@@ -297,116 +277,16 @@ class StructDefinition(object):
 
 class StructInfo(object):
     def __init__(self):
-        self.architecture = StructMeta._arch
+        self.arch = 'all'
         self.line_defined = 0
         self.is_custom_type = False
         self.is_pod_type = False
-        self.offsets = {}
 
     def __repr__(self):
         return f'StructInfo(' \
-               f'{self.architecture}, ' \
+               f'arch={self.arch}' \
                f'custom={self.is_custom_type}, ' \
                f'POD={self.is_pod_type})'
-
-
-# endregion
-
-# region StructMethods
-
-class StructMethods(object):
-
-    # TODO: Equality and hashing
-
-    @staticmethod
-    def init(self, address, *args, **kwargs):
-        self.address = address
-        self.variables = {}
-        is_buffer_type = kwargs.get('buffer', False)
-
-        StructMeta.check_buffer_view_kwargs(address, kwargs)
-
-        struct = StructMeta.struct(self.__class__)
-        if struct is None:
-            raise RuntimeError("Forgot to call Struct.define_types() before creating an instance of a Struct")
-
-        self.size = struct.size
-        self._getters = [None for _ in struct.fields]
-        self._setters = [None for _ in struct.fields]
-
-        if is_buffer_type:
-            if 'offset_in_parent' in kwargs:
-                self.buffer = cgh.buf(kwargs['parent_buffer'], kwargs['offset_in_parent'], struct.size)
-            else:
-                self.buffer = cgh.buf(address, struct.size)
-
-        else:
-            kwargs['parent_buffer'] = getattr(self, 'buffer', None)
-
-            for name, field in struct.fields.items():
-                self.variables[name] = StructLazyField(field, kwargs)
-
-    @staticmethod
-    def read(self):
-        if hasattr(self, 'buffer'):
-            # TODO: Read nested buffers
-            self.buffer.get().read_from(self.address.value)
-        return self
-
-    @staticmethod
-    def write(self, value):
-        self_buffer = getattr(self, 'buffer', None)
-
-        # Struct = [Struct, Struct<Buffer>, StructData]
-        if self_buffer is None:
-            for k, variable in self.variables.items():
-                v = getattr(value, k)
-                if value:
-                    variable.write(v)
-            return
-
-        value_buffer = getattr(value, 'buffer', None)
-
-        # Struct<Buffer> = Struct<Buffer>
-        if value_buffer is not None:
-            assert self_buffer.get().size == value_buffer.get().size, "Setting a buffer struct with a buffer struct of a different size"
-            self_buffer.write(value_buffer.get())
-
-        # Struct<Buffer> = [Struct, StructData]
-        else:
-            # Struct<Buffer> = Struct
-            if StructMeta.is_struct(value):
-                for k, variable in value.variables.items():
-                    setattr(self, k, variable.read())
-
-            # Struct<Buffer> = StructData
-            else:
-                for k in self.__class__.__annotations__:
-                    v = getattr(value, k)
-                    if v:
-                        setattr(self, k, v)
-
-    @staticmethod
-    def flush(self):
-        if not hasattr(self, 'buffer'):
-            raise RuntimeError("'write_contents' can only be called on structs created with 'buffer=True'")
-        # TODO: Write nested buffers
-        self.buffer.get().write_to(self.address.value)
-
-    @staticmethod
-    def reset(self):
-        buffer = getattr(self, 'buffer', None)
-        if buffer is not None:
-            buffer.clear()
-        else:
-            for v in self.variables.items():
-                v.reset()
-
-    @staticmethod
-    def str(self):
-        if getattr(self, 'address', None) is None:
-            return self.__class__.__name__
-        return f'{self.__class__.__name__}({cgh.Address.make_string(self.address.value, self.address.hack.process.arch)})'
 
 
 # endregion
@@ -456,7 +336,7 @@ class StructType(object):
     def size(self):
         if self.element_size == StructType.LAZY_SIZE:
             if self.is_pointer:
-                return StructMeta._ptr_size
+                return _StructDefinitions.ptr_size
             else:
                 return self.type.size * self.element_count
         else:
@@ -553,182 +433,10 @@ class StructType(object):
             return StructType(t, t.size, 1, False)
         # Forward defined Struct
         else:
-            t = StructMeta.named(typ)
+            t = StructMeta.named(typ, _StructDefinitions.arch)
             if t is None:
                 raise RuntimeError(f"Undefined struct used in forward declaration: '{typ}'")
             return StructType(t.cls, t.cls.size, 1)
-
-
-# endregion
-
-# region StructField
-
-class StructLazyField(object):
-    def __init__(self, field, kwargs):
-        self.field = field
-        self.kwargs = kwargs
-
-    def __repr__(self):
-        return f'LazyField[{self.field}]'
-
-    def __bool__(self):
-        return False
-
-
-class StructField(object):
-    def __init__(self, name, typ, struct, index):
-        self.name = name
-        self.struct = struct
-        self.index = index
-        self.type = StructType.detect(typ)
-        self.method_suffix = self.type.__name__
-
-    @property
-    def size(self):
-        return self.type.size
-
-    def __repr__(self):
-        return self.type.__name__
-
-    @property
-    def getter(self):
-        # Closure that creates a variable and getter function if it does not exist
-        index = self.index
-
-        def _get(instance):
-            getter = instance._getters[index]
-            if not getter:
-                is_buffer_type = hasattr(instance, 'buffer')
-                if not is_buffer_type and isinstance(instance.variables[self.name], StructLazyField):
-                    kwargs = instance.variables[self.name].kwargs
-                    instance.variables[self.name] = self.create_field_variable(instance, kwargs)
-                getter = self.create_struct_or_buffer_getter(instance, is_buffer_type)
-                instance._getters[index] = getter
-            return getter(instance)
-
-        return _get
-
-    @property
-    def setter(self):
-        # Closure that creates a variable and setter function if it does not exist
-        index = self.index
-
-        def _set(instance, value):
-            setter = instance._setters[index]
-            if not setter:
-                is_buffer_type = hasattr(instance, 'buffer')
-                if not is_buffer_type and isinstance(instance.variables[self.name], StructLazyField):
-                    kwargs = instance.variables[self.name].kwargs
-                    instance.variables[self.name] = self.create_field_variable(instance, kwargs)
-                setter = self.create_struct_or_buffer_setter(instance, is_buffer_type)
-                instance._setters[index] = setter
-            setter(instance, value)
-
-        return _set
-
-    def create_field_variable(self, instance, kwargs):
-        kwargs['offset_in_parent'] = True
-        field_kwargs = kwargs if StructMeta.is_struct(self.type) else {}
-        address = None
-        if getattr(instance, 'address', None) is not None:
-            address = cgh.Address(instance.address, self.struct.offsets[self.name])
-        return self.type(address, **field_kwargs)
-
-    def create_struct_or_buffer_getter(self, instance, is_buffer_type):
-        # Closure that reads from buffer memory for buffer-types and from a variable otherwise
-        variable = instance.variables.get(self.name, None)
-        if is_buffer_type and not variable:
-            offset = self.struct.offsets[self.name][0]
-            method = getattr(instance.buffer.get(), f'read_{self.method_suffix}')
-            return lambda i: method(offset)
-        return StructField.create_variable_getter(variable, is_buffer_type)
-
-    def create_struct_or_buffer_setter(self, instance, is_buffer_type):
-        # Closure that writes to buffer memory for buffer-types and to a variable otherwise
-        variable = instance.variables.get(self.name, None)
-        if is_buffer_type and not variable:
-            offset = self.struct.offsets[self.name][0]
-            method = getattr(instance.buffer.get(), f'write_{self.method_suffix}')
-            return lambda i, v: method(offset, v)
-        return StructField.create_variable_setter(variable)
-
-    @staticmethod
-    def create_variable_getter(variable, is_buffer):
-        # Closure that loads the variable's address if it has not been loaded
-        if is_buffer:
-            def _get(s):
-                if not variable.address.loaded:
-                    variable.address.load()
-                return variable
-
-            return _get
-
-        else:
-            def _get(s):
-                if not variable.address.loaded:
-                    variable.address.load()
-                return variable.read()
-
-            return _get
-
-    @staticmethod
-    def create_variable_setter(variable):
-        # Closure that loads the variable's address if it has not been loaded
-        def _set(s, v):
-            if not variable.address.loaded:
-                variable.address.load()
-            return variable.write(v)
-
-        return _set
-
-
-# endregion
-
-# region StructProperty
-
-class StructProperty(property):
-    def __init__(self, field, fget, fset):
-        super().__init__(fget, fset, lambda: None, "")
-        self.field = field
-        self.dot_path = []
-
-    @property
-    def size(self):
-        return self.field.size
-
-    def __repr__(self):
-        return f"Property({self.field.type.full_name})"
-
-    @property
-    def __doc__(self):
-        return '\n'.join([StructProperty.create_doc(f) for f in self._consume_dot_path()])
-
-    def __getattribute__(self, item):
-        if item in StructProperty._custom_props:
-            return super().__getattribute__(item)
-        else:
-            self.dot_path.append(self.field)
-            t = self.field.type.unwrapped
-            v = t.__getattribute__(t, item)
-            if isinstance(v, StructProperty):
-                v.dot_path = self.dot_path
-            return v
-
-    def _consume_dot_path(self):
-        path = [i for i in self.dot_path] + [self.field]
-        self.dot_path.clear()
-        return path
-
-    @staticmethod
-    def create_doc(field):
-        return f'{field.struct.cls.__name__}.{field.name}: ' \
-               f'{field.type.__name__} = ' \
-               f'[{", ".join([cgh.Address.make_string(v) for v in field.struct.offsets[field.name]])}]'
-
-    _custom_props = {
-        'field', '__doc__', 'size', 'dot_path', '_consume_dot_path',
-        "__class__", "__name__", "__bases__", "__mro__", "__module__", '__repr__'
-    }
 
 
 # endregion
@@ -774,27 +482,423 @@ class TypeWrapper(type):
 
 # endregion
 
-# region Dependency Sort
+# region _StructDefinitions
 
-def _sort_by_dependency(definitions, dependencies, get_key=lambda v: v.__name__):
-    def get_score_single(dep, level=0, seen=None):
-        seen = seen or set()
-        score = level * 10000
-        for d in dependencies.get(dep, set()):
-            if d not in seen:
-                seen.add(d)
-                score += get_score_single(d, level + 1, seen)
-        return score
+class _StructDefinitions(object):
 
-    def get_score(k, i):
-        if not dependencies.get(k, set()):
-            return i
-        return get_score_single(k) + i
+    arch = 0
+    ptr_size = 0
+    to_define = []
 
-    scores = {
-        get_key(v): get_score(get_key(v), i) for i, v in enumerate(definitions)
+    def __init__(self):
+        self.defined = {}
+        self.defined_by_name = {}
+        self.dependencies = {}
+
+    @staticmethod
+    def defs(arch):
+        return _defined_32 if arch == 32 else _defined_64
+
+    @staticmethod
+    def define_types(arch: int):
+        assert arch == 32 or arch == 64, "Architecture must be 32 or 64"
+        _StructDefinitions.ptr_size = 4 if arch == 32 else 8
+        _StructDefinitions.arch = arch
+
+        definitions = _StructDefinitions.defs(arch)
+
+        for cls in _StructDefinitions.to_define:
+            definition = definitions.defined[cls]
+            definitions.defined_by_name[cls.__name__] = definition
+            definitions.dependencies[cls.__name__] = definition.parse_dependencies()
+
+        StructDependencies.sort(_StructDefinitions.to_define, definitions.dependencies,
+                                 get_key=lambda t: t.__name__)
+
+        for cls in _StructDefinitions.to_define:
+            StructMeta.struct(cls, arch).parse_fields()
+
+        for cls in _StructDefinitions.to_define:
+            StructMeta.struct(cls, arch).parse_size()
+
+        _StructDefinitions.ptr_size = 0
+        _StructDefinitions.arch = 0
+
+    @staticmethod
+    def add_definitions_for_class(cls: 'StructMeta'):
+        arches = [32, 64]
+        defs = [StructDefinition(cls), StructDefinition(cls)]
+        for d, arch in zip(defs, arches):
+            _StructDefinitions.defs(arch).defined[cls] = d
+
+    @staticmethod
+    def configure_class(cls: 'StructMeta', attrs, kwargs):
+        cls.__annotations__ = attrs.get('__annotations__', {})
+        cls._info = getattr(cls, '_info', StructInfo())
+        cls._info.line_defined = inspect.getouterframes(inspect.currentframe())[1].lineno  # gets line of class def
+        cls._info.is_custom_type = kwargs.pop('custom', cls._info.is_custom_type)
+        for arch in [32, 64]:
+            offsets_from_attrs = {k: v for k, v in attrs.items() if StructDefinition.is_struct_offset(v)}
+            StructMeta.struct(cls, arch).offsets.update(offsets_from_attrs)
+
+    @staticmethod
+    def check_dependencies_define(cls: 'StructMeta'):
+        if not StructDependencies.has_unresolved(
+                _StructDefinitions.to_define,
+                get_key=lambda c: c.__name__,
+                get_types=lambda c: c.__annotations__
+        ):
+            if cls._info.arch not in ['all', 'x86', 'x64']:
+                raise RuntimeError(f"Invalid architecture: {cls._info.arch} - must be one of ['all', 'x86', 'x64']")
+
+            if cls._info.arch == 'all' or cls._info.arch == 'x86':
+                _StructDefinitions.define_types(32)
+
+            if cls._info.arch == 'all' or cls._info.arch == 'x64':
+                _StructDefinitions.define_types(64)
+
+            _StructDefinitions.to_define.clear()
+
+
+_defined_32 = _StructDefinitions()
+_defined_64 = _StructDefinitions()
+
+
+# endregion
+
+# region _StructMethods
+
+class _StructMethods(object):
+
+    # TODO: Equality and hashing
+
+    @staticmethod
+    def init(self, address, *args, **kwargs):
+        self.address = address
+        self.variables = {}
+        is_buffer_type = kwargs.get('buffer', False)
+
+        StructMeta.check_buffer_view_kwargs(address, kwargs)
+
+        arch = StructMeta.get_architecture_from_address_kwargs(address, kwargs)
+        struct = StructMeta.struct(self.__class__, arch)
+        if struct is None:
+            raise RuntimeError("Struct is not defined. Since struct definition is automatic now we need a better error message here")
+
+        self.size = struct.size
+        self._getters = [None for _ in struct.fields]
+        self._setters = [None for _ in struct.fields]
+
+        if is_buffer_type:
+            if 'offset_in_parent' in kwargs:
+                self.buffer = cgh.buf(kwargs['parent_buffer'], kwargs['offset_in_parent'], struct.size)
+            else:
+                self.buffer = cgh.buf(address, struct.size)
+
+        else:
+            kwargs['parent_buffer'] = getattr(self, 'buffer', None)
+
+            for name, field in struct.fields.items():
+                self.variables[name] = _StructLazyField(field, kwargs)
+
+    @staticmethod
+    def read(self):
+        if hasattr(self, 'buffer'):
+            # TODO: Read nested buffers
+            self.buffer.get().read_from(self.address.value)
+        return self
+
+    @staticmethod
+    def write(self, value):
+        self_buffer = getattr(self, 'buffer', None)
+
+        # Struct = [Struct, Struct<Buffer>, StructData]
+        if self_buffer is None:
+            for k, variable in self.variables.items():
+                v = getattr(value, k)
+                if value:
+                    variable.write(v)
+            return
+
+        value_buffer = getattr(value, 'buffer', None)
+
+        # Struct<Buffer> = Struct<Buffer>
+        if value_buffer is not None:
+            assert self_buffer.get().size == value_buffer.get().size, "Setting a buffer struct with a buffer struct of a different size"
+            self_buffer.write(value_buffer.get())
+
+        # Struct<Buffer> = [Struct, StructData]
+        else:
+            # Struct<Buffer> = Struct
+            if StructMeta.is_struct(value):
+                for k, variable in value.variables.items():
+                    setattr(self, k, variable.read())
+
+            # Struct<Buffer> = StructData
+            else:
+                for k in self.__class__.__annotations__:
+                    v = getattr(value, k)
+                    if v:
+                        setattr(self, k, v)
+
+    @staticmethod
+    def flush(self):
+        if not hasattr(self, 'buffer'):
+            raise RuntimeError("'write_contents' can only be called on structs created with 'buffer=True'")
+        # TODO: Write nested buffers
+        self.buffer.get().write_to(self.address.value)
+
+    @staticmethod
+    def reset(self):
+        buffer = getattr(self, 'buffer', None)
+        if buffer is not None:
+            buffer.clear()
+        else:
+            for v in self.variables.items():
+                v.reset()
+
+    @staticmethod
+    def str(self):
+        if getattr(self, 'address', None) is None:
+            return self.__class__.__name__
+        return f'{self.__class__.__name__}({cgh.Address.make_string(self.address.value, self.address.hack.process.arch)})'
+
+
+# endregion
+
+# region _StructField
+
+class _StructLazyField(object):
+    def __init__(self, field, kwargs):
+        self.field = field
+        self.kwargs = kwargs
+
+    def __repr__(self):
+        return f'LazyField[{self.field}]'
+
+    def __bool__(self):
+        return False
+
+
+class _StructField(object):
+    def __init__(self, name, typ, struct, index):
+        self.name = name
+        self.struct = struct
+        self.index = index
+        self.type = StructType.detect(typ)
+        self.method_suffix = self.type.__name__
+
+    @property
+    def size(self):
+        return self.type.size
+
+    def __repr__(self):
+        return self.type.__name__
+
+    @property
+    def getter(self):
+        # Closure that creates a variable and getter function if it does not exist
+        index = self.index
+
+        def _get(instance):
+            getter = instance._getters[index]
+            if not getter:
+                is_buffer_type = hasattr(instance, 'buffer')
+                if not is_buffer_type and isinstance(instance.variables[self.name], _StructLazyField):
+                    kwargs = instance.variables[self.name].kwargs
+                    instance.variables[self.name] = self.create_field_variable(instance, kwargs)
+                getter = self.create_struct_or_buffer_getter(instance, is_buffer_type)
+                instance._getters[index] = getter
+            return getter(instance)
+
+        return _get
+
+    @property
+    def setter(self):
+        # Closure that creates a variable and setter function if it does not exist
+        index = self.index
+
+        def _set(instance, value):
+            setter = instance._setters[index]
+            if not setter:
+                is_buffer_type = hasattr(instance, 'buffer')
+                if not is_buffer_type and isinstance(instance.variables[self.name], _StructLazyField):
+                    kwargs = instance.variables[self.name].kwargs
+                    instance.variables[self.name] = self.create_field_variable(instance, kwargs)
+                setter = self.create_struct_or_buffer_setter(instance, is_buffer_type)
+                instance._setters[index] = setter
+            setter(instance, value)
+
+        return _set
+
+    def create_field_variable(self, instance, kwargs):
+        kwargs['offset_in_parent'] = True
+        field_kwargs = kwargs if StructMeta.is_struct(self.type) else {}
+        address = None
+        if getattr(instance, 'address', None) is not None:
+            address = cgh.Address(instance.address, self.struct.offsets[self.name])
+        return self.type(address, **field_kwargs)
+
+    def create_struct_or_buffer_getter(self, instance, is_buffer_type):
+        # Closure that reads from buffer memory for buffer-types and from a variable otherwise
+        variable = instance.variables.get(self.name, None)
+        if is_buffer_type and not variable:
+            offset = self.struct.offsets[self.name][0]
+            method = getattr(instance.buffer.get(), f'read_{self.method_suffix}')
+            return lambda i: method(offset)
+        return _StructField.create_variable_getter(variable, is_buffer_type)
+
+    def create_struct_or_buffer_setter(self, instance, is_buffer_type):
+        # Closure that writes to buffer memory for buffer-types and to a variable otherwise
+        variable = instance.variables.get(self.name, None)
+        if is_buffer_type and not variable:
+            offset = self.struct.offsets[self.name][0]
+            method = getattr(instance.buffer.get(), f'write_{self.method_suffix}')
+            return lambda i, v: method(offset, v)
+        return _StructField.create_variable_setter(variable)
+
+    @staticmethod
+    def create_variable_getter(variable, is_buffer):
+        # Closure that loads the variable's address if it has not been loaded
+        if is_buffer:
+            def _get(s):
+                if not variable.address.loaded:
+                    variable.address.load()
+                return variable
+
+            return _get
+
+        else:
+            def _get(s):
+                if not variable.address.loaded:
+                    variable.address.load()
+                return variable.read()
+
+            return _get
+
+    @staticmethod
+    def create_variable_setter(variable):
+        # Closure that loads the variable's address if it has not been loaded
+        def _set(s, v):
+            if not variable.address.loaded:
+                variable.address.load()
+            return variable.write(v)
+
+        return _set
+
+
+# endregion
+
+# region _StructProperty
+
+class _StructProperty(property):
+    def __init__(self, field, fget, fset):
+        super().__init__(fget, fset, lambda: None, "")
+        self.field = field
+        self.dot_path = []
+
+    @property
+    def size(self):
+        return self.field.size
+
+    def __repr__(self):
+        return f"Property({self.field.type.full_name})"
+
+    @property
+    def __doc__(self):
+        return '\n'.join([_StructProperty.create_doc(f) for f in self._consume_dot_path()])
+
+    def __getattribute__(self, item):
+        if item in _StructProperty._custom_props:
+            return super().__getattribute__(item)
+        else:
+            self.dot_path.append(self.field)
+            t = self.field.type.unwrapped
+            v = t.__getattribute__(t, item)
+            if isinstance(v, _StructProperty):
+                v.dot_path = self.dot_path
+            return v
+
+    def _consume_dot_path(self):
+        path = [i for i in self.dot_path] + [self.field]
+        self.dot_path.clear()
+        return path
+
+    @staticmethod
+    def create_doc(field):
+        return f'{field.struct.cls.__name__}.{field.name}: ' \
+               f'{field.type.__name__} = ' \
+               f'[{", ".join([cgh.Address.make_string(v) for v in field.struct.offsets[field.name]])}]'
+
+    _custom_props = {
+        'field', '__doc__', 'size', 'dot_path', '_consume_dot_path',
+        "__class__", "__name__", "__bases__", "__mro__", "__module__", '__repr__'
     }
 
-    definitions.sort(key=lambda v: scores[get_key(v)])
+
+# endregion
+
+# region StructDependencies
+
+class StructDependencies:
+    @staticmethod
+    def has_unresolved(
+            definitions,
+            get_key=lambda v: v.__name__,
+            get_types=lambda v: v.__annotations__
+    ):
+        ready = set()
+        did_make_progress = True
+        remaining = [c for c in definitions]
+
+        while did_make_progress:
+            did_make_progress = False
+
+            for i, cls in enumerate(remaining):
+                has_dependencies = False
+
+                for t in get_types(cls).values():
+                    if isinstance(t, str) and not hasattr(cgh, t) and t not in ready:
+                        has_dependencies = True
+                        break
+
+                if has_dependencies:
+                    continue
+                else:
+                    did_make_progress = True
+                    remaining.pop(i)
+                    ready.add(get_key(cls))
+                    break
+
+        # If any definitions contain unknown types, there are still unresolved dependencies
+        remaining_names = set(get_key(v) for v in remaining)
+        for cls in remaining:
+            for t in get_types(cls).values():
+                if isinstance(t, str) and not hasattr(cgh, t) and t not in ready and t not in remaining_names:
+                    return True
+
+        return False
+
+    @staticmethod
+    def sort(definitions, dependencies, get_key=lambda v: v.__name__):
+        def get_score_single(dep, level=0, seen=None):
+            seen = seen or set()
+            score = level * 10000
+            for d in dependencies.get(dep, set()):
+                if d not in seen:
+                    seen.add(d)
+                    score += get_score_single(d, level + 1, seen)
+            return score
+
+        def get_score(k, i):
+            if not dependencies.get(k, set()):
+                return i
+            return get_score_single(k) + i
+
+        scores = {
+            get_key(v): get_score(get_key(v), i) for i, v in enumerate(definitions)
+        }
+
+        definitions.sort(key=lambda v: scores[get_key(v)])
 
 # endregion

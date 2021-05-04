@@ -33,6 +33,7 @@ namespace pygamehack {
 class WindowsProcessAPI {
 	uint32_t id{ 0 };
 	void* handle{ nullptr };
+	uint32_t access_rights{};
 public:
     //region Basic
 
@@ -48,6 +49,11 @@ public:
 	bool is_attached() const
     {
 	    return (handle != nullptr) && (WaitForSingleObject(handle, 0) == WAIT_OBJECT_0 ? false : true);
+    }
+
+    bool is_read_only() const
+    {
+        return (access_rights & PROCESS_VM_WRITE) > 0;
     }
 
 	bool is_64_bit() const
@@ -124,11 +130,13 @@ public:
 
 	bool write_memory(void* dst, const void* src, usize size) const
     {
+        PGH_ASSERT(access_rights == PROCESS_ALL_ACCESS, "Cannot write memory in a read-only process");
         return WriteProcessMemory(handle, dst, src, size, nullptr);
     }
     
 	Memory::Protect virtual_protect(uptr ptr, usize size, Memory::Protect protect) const
     {
+        PGH_ASSERT(access_rights == PROCESS_ALL_ACCESS, "Cannot modify memory protection in a read-only process");
         DWORD old_protect;
         VirtualProtectEx(handle, (LPVOID)ptr, size, get_platform_protect(protect), &old_protect);
         return get_pygamehack_protect(old_protect);
@@ -149,7 +157,7 @@ public:
 
     //region Attach/Detach
 
-	void attach(const char* process_name)
+	void attach(const char* process_name, bool read_only = false)
     {
         if (handle) {
             CloseHandle(handle);
@@ -181,7 +189,8 @@ public:
             throw std::exception{ msg.c_str() };
         }
 
-        handle = OpenProcess(PROCESS_ALL_ACCESS, NULL, id);
+        access_rights = !read_only ? PROCESS_ALL_ACCESS : (PROCESS_VM_READ | SYNCHRONIZE);
+        handle = OpenProcess(access_rights, NULL, id);
 
         if (!handle) {
             id = 0;
@@ -190,9 +199,10 @@ public:
         }
     }
 
-	void attach(u32 pid) {
+	void attach(u32 pid, bool read_only = false) {
 	    id = pid;
-        handle = OpenProcess(PROCESS_ALL_ACCESS, NULL, id);
+        access_rights = !read_only ? PROCESS_ALL_ACCESS : (PROCESS_VM_READ | SYNCHRONIZE);
+        handle = OpenProcess(access_rights, NULL, id);
         if (!handle) {
             id = 0;
             string msg = string{ "Failed to open process " } + std::to_string(pid);
@@ -239,16 +249,17 @@ public:
 
         uptr current{begin}, region_begin{};
         usize region{}, region_size{}, step{};
+        Memory::Protect region_protect{};
         MEMORY_BASIC_INFORMATION mbi{};
 
         while (current < begin + size) {
             region = VirtualQueryEx(handle, (LPCVOID)current, &mbi, sizeof(mbi));
 
-            if (region && mbi.State != MEM_FREE) {
+            if (region && mbi.State == MEM_COMMIT) {
                 region_begin = reinterpret_cast<uptr>(mbi.BaseAddress);
                 current = region_begin;
                 region_size = mbi.RegionSize;
-                
+                region_protect = get_pygamehack_protect(mbi.Protect);
                 uptr region_end = region_begin + region_size;
 
                 while (current < region_end) {
@@ -257,6 +268,7 @@ public:
                     Memory::Protect old_protect;
                     if (protect != Memory::Protect::NONE) {
                         old_protect = virtual_protect(current, step, protect);
+                        region_protect = protect;
                     }
 
                     if (read) {
@@ -265,7 +277,7 @@ public:
                     }
                     
                     bool done = false;
-                    if (callback(current, step, data.data())) {
+                    if (callback(current, step, region_protect, data.data())) {
                         done = true;
                     }
 
@@ -425,23 +437,27 @@ const module_map& Process::modules() const
 
 bool Process::is_attached() const
 {
-
     return API.is_attached();
 }
 
-bool Process::attach(u32 process_id)
+bool Process::is_read_only() const
+{
+    return API.is_read_only();
+}
+
+bool Process::attach(u32 process_id, bool read_only)
 {
 	_modules.clear();
-	API.attach(process_id);
+	API.attach(process_id, read_only);
 	_arch = API.is_64_bit() ? Arch::X64 : Arch::X86;
 	API.get_modules(_modules);
 	return API.is_attached();
 }
 
-bool Process::attach(const string& process_name)
+bool Process::attach(const string& process_name, bool read_only)
 {
 	_modules.clear();
-	API.attach(process_name.c_str());
+	API.attach(process_name.c_str(), read_only);
 	_arch = API.is_64_bit() ? Arch::X64 : Arch::X86;
 	API.get_modules(_modules);
 	return API.is_attached();

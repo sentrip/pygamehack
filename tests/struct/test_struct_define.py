@@ -25,18 +25,15 @@ def test_define_struct(hack, app, cleanup_struct_types):
         marker: gh.uint         = 0x0
         n     : IntTypes        = 0x10
 
-    gh.Struct.define_types(app.arch)
-
     assert IntTypes.size == 32
     assert TestProgram.size == 48
 
+    hack.attach(app.pid)
     n = IntTypes(gh.Address(hack, app.addr.int_types.value))
     t = TestProgram(gh.Address(hack, app.addr.marker))
 
     assert n.size == 32
     assert t.size == 48
-
-    hack.attach(app.pid)
 
     assert t.marker  == app.marker_value
     assert n.num_i8  == -15
@@ -68,18 +65,15 @@ def test_define_struct_string_forward_declaration(hack, app, cleanup_struct_type
         num_u32: 'u32' = 20
         num_u64: 'u64' = 24
 
-    gh.Struct.define_types(app.arch)
-    
     assert IntTypes.size == 32
     assert TestProgram.size == 48
 
+    hack.attach(app.pid)
     n = IntTypes(gh.Address(hack, app.addr.int_types.value))
     t = TestProgram(gh.Address(hack, app.addr.marker))
 
     assert n.size == 32
     assert t.size == 48
-
-    hack.attach(app.pid)
 
     assert t.marker  == app.marker_value
     assert n.num_i8  == -15
@@ -100,8 +94,8 @@ def test_define_struct_circular_dependency(hack, app, cleanup_struct_types):
     class TypeB(gh.Struct):
         a: 'TypeA' = 0x0
 
-    gh.Struct.define_types(app.arch)
-    
+    hack.attach(app.pid)
+
     a = TypeA(gh.Address(hack, 0))
     b = TypeB(gh.Address(hack, 0))
 
@@ -114,9 +108,7 @@ def test_define_struct_unnamed_buffer(hack, app, cleanup_struct_types):
     class TestProgram(gh.Struct):
         marker: 'uint'          = 0x0
         n     : gh.buf[32]      = 0x10
-        
-    gh.Struct.define_types(app.arch)
-    
+
     hack.attach(app.pid)
     
     t = TestProgram(gh.Address(hack, app.addr.marker))
@@ -127,13 +119,10 @@ def test_define_struct_unnamed_buffer(hack, app, cleanup_struct_types):
 
 
 def test_define_struct_buffer_with_no_size(hack, app, cleanup_struct_types):
-
-    class TestProgram(gh.Struct):
-        marker: 'uint'          = 0x0
-        n     : gh.buf          = 0x10
-
     with pytest.raises(RuntimeError):
-        gh.Struct.define_types(app.arch)
+        class TestProgram(gh.Struct):
+            marker: 'uint'          = 0x0
+            n     : gh.buf          = 0x10
 
 
 def test_define_struct_inline_string(hack, app, cleanup_struct_types):
@@ -142,11 +131,9 @@ def test_define_struct_inline_string(hack, app, cleanup_struct_types):
         marker: 'uint'          = 0x0
         s     : gh.str[32]      = 0x30
 
-    gh.Struct.define_types(app.arch)
-
     hack.attach(app.pid)
     t = TestProgram(gh.Address(hack, app.addr.marker))
-    
+
     assert t.size == 80
 
     assert t.s == "TestString"
@@ -157,25 +144,39 @@ def test_define_nested_ptr(hack, app, cleanup_struct_types):
     class TestS(gh.Struct):
         value: gh.ptr[gh.ptr['uint']] = 0x10
 
-    gh.Struct.define_types(app.arch)
-
-    assert gh.Struct.struct(TestS).offsets['value'] == [16, 0, 0]
+    assert gh.Struct.struct(TestS, app.arch).offsets['value'] == [16, 0, 0]
 
 
 def test_user_defined_struct_type(hack, app, cleanup_struct_types):
 
     class Wrapper(metaclass=gh.TypeWrapper):
         @classmethod
-        def get_type(mcs, t):
+        def get_type(cls, t):
             return gh.StructType(t)
 
     class TestProgram(gh.Struct):
         marker: Wrapper['uint'] = 0x0
-
-    gh.Struct.define_types(app.arch)
 
     hack.attach(app.pid)
     ts = TestProgram(gh.Address(hack, app.addr.marker))
 
     assert ts.size == 4
     assert ts.marker == app.marker_value
+
+
+def test_struct_derived_class(hack, app, cleanup_struct_types):
+    class TestProgram(gh.Struct):
+        marker: gh.uint = 0x0
+
+    class TestProgramDerived(TestProgram):
+        pass
+
+    hack.attach(app.pid)
+    t = TestProgram(gh.Address(hack, app.addr.marker))
+    d = TestProgramDerived(gh.Address(hack, app.addr.marker))
+
+    assert t.size == 4
+    assert d.size == 4
+
+    assert t.marker == app.marker_value
+    assert d.marker == app.marker_value

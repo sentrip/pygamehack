@@ -18,11 +18,14 @@ namespace pygamehack {
 
 //region Memory Scan
 
-static Process::iter_region_callback process_region_func(std::vector<uptr>& results, const Process& process, const u8* value, usize value_size, uptr begin, usize size, usize max_results, bool regex, std::mutex* mutex)
+static Process::iter_region_callback process_region_func(std::vector<uptr>& results, const Process& process, const u8* value, usize value_size, uptr begin, usize size, usize max_results, Memory::Protect requested_protection, bool regex, std::mutex* mutex)
 {
     if (regex) {
         // TODO: Fast regex scan
-        return [value, value_size, max_results, &results, mutex](uptr rbegin, usize rsize, const u8* data) {
+        return [value, value_size, max_results, &results, requested_protection, mutex](uptr rbegin, usize rsize, Memory::Protect protect, const u8* data) {
+            if (requested_protection != Memory::Protect::NONE && (u32(protect) & u32(requested_protection)) == 0)
+                return false;
+
             std::string_view bytes{ (const char*)data, rsize };
             std::string value_bytes{ (const char*)value, value_size };
 
@@ -50,7 +53,10 @@ static Process::iter_region_callback process_region_func(std::vector<uptr>& resu
         };
     }
     else {
-        return [value, value_size, max_results,&results, mutex](uptr rbegin, usize rsize, const u8* data) {
+        return [value, value_size, max_results,&results, requested_protection, mutex](uptr rbegin, usize rsize, Memory::Protect protect, const u8* data) {
+            if (requested_protection != Memory::Protect::NONE && (u32(protect) & u32(requested_protection)) == 0)
+                return false;
+
             for (size_t i = 0; i < rsize; i += value_size) {
                 if (memcmp(&data[i], value, std::min<usize>(rsize - i, value_size)) == 0) {
                     if (mutex) {
@@ -69,12 +75,11 @@ static Process::iter_region_callback process_region_func(std::vector<uptr>& resu
                 }
             }
             return false;
-
         };
     }
 }
 
-static void do_fast_memory_scan(usize n_threads, std::vector<uptr>& results, const Process& process, const u8* value, usize value_size, uptr begin, usize size, usize max_results, bool regex)
+static void do_fast_memory_scan(usize n_threads, std::vector<uptr>& results, const Process& process, const u8* value, usize value_size, uptr begin, usize size, usize max_results, Memory::Protect requested_protection, bool regex)
 {
     static constexpr size_t SCAN_BLOCK_SIZE_BASIC = 256 * 1024;
     static constexpr size_t SCAN_BLOCK_SIZE_STRING = 2 * 1024 * 1024;
@@ -84,10 +89,11 @@ static void do_fast_memory_scan(usize n_threads, std::vector<uptr>& results, con
     struct ScanRegion {
         uptr begin{};
         usize size{};
+        Memory::Protect protect{};
     };
 
     if (n_threads == 0 || size <= MIN_SCAN_SIZE_FOR_THREADING) {
-        process.iter_regions(begin, size, process_region_func(results, process, value, value_size, begin, size, max_results, regex, nullptr));
+        process.iter_regions(begin, size, process_region_func(results, process, value, value_size, begin, size, max_results, requested_protection, regex, nullptr));
         return;
     }
 
@@ -96,7 +102,7 @@ static void do_fast_memory_scan(usize n_threads, std::vector<uptr>& results, con
     // Collect scan regions
     usize block_size = regex ? SCAN_BLOCK_SIZE_STRING : SCAN_BLOCK_SIZE_BASIC;
     process.iter_regions(begin, size, 
-        [&queue](uptr rbegin, usize rsize, const u8* data) { queue.push_back(ScanRegion{rbegin, rsize}); return false; },
+        [&queue](uptr rbegin, usize rsize, Memory::Protect protect, const u8* data) { queue.push_back(ScanRegion{rbegin, rsize, protect}); return false; },
         Memory::Protect::NONE, false, block_size);
 
     // Determine number of threads based on number of scan regions
@@ -112,11 +118,11 @@ static void do_fast_memory_scan(usize n_threads, std::vector<uptr>& results, con
     threads.resize(n_threads);
 
     // Create region process function
-    auto do_process = process_region_func(results, process, value, value_size, begin, size, max_results, regex, &mutex);
+    auto do_process = process_region_func(results, process, value, value_size, begin, size, max_results, requested_protection, regex, &mutex);
 
     // Dispatch scans to threads
     for (usize i = 0; i < n_threads; ++i) {
-        threads[i] = std::thread([&do_process, &process, &queue, &scan_index, &done, block_size=block_size]()
+        threads[i] = std::thread([&do_process, &process, &queue, &scan_index, &done, block_size=block_size, requested_protection=requested_protection]()
         {
             Memory mem;
             ScanRegion region;
@@ -132,22 +138,29 @@ static void do_fast_memory_scan(usize n_threads, std::vector<uptr>& results, con
                 }
 
                 region = queue[i];
-                
+
+                // If the region does not have the requested protection then skip it
+                if (requested_protection != Memory::Protect::NONE && (u32(region.protect) & u32(requested_protection)) == 0)
+                    continue;
+
                 if (region.size > data.size()) data.resize(region.size);
 
-                mem = process.protect(region.begin, region.size, Memory::Protect::READ_WRITE);
-                
+                // If the region does not have read permissions then they must be requested
+                bool needs_protect = (u32(region.protect) & u32(Memory::Protect::READ_ONLY)) == 0;
+
+                mem = process.protect(region.begin, region.size, Memory::Protect::READ_ONLY);
+
+                if (needs_protect) mem.protect();
+
                 process.read_memory(data.data(), region.begin, region.size);
 
-                mem.protect();
-                
-                if (do_process(region.begin, region.size, data.data())) {
+                if (do_process(region.begin, region.size, region.protect, data.data())) {
                     done.store(true, std::memory_order_release);
-                    mem.reset();
+                    if (needs_protect) mem.reset();
                     return;
                 }
 
-                mem.reset();
+                if (needs_protect) mem.reset();
             }
         });
     }
@@ -198,24 +211,20 @@ const Process& Hack::process() const
     return _process;
 }
 
-void Hack::attach(u32 process_id)
+bool Hack::attach(u32 process_id, bool read_only)
 {
     if (_process.is_attached()) {
         _process.detach();
     }
-    if (!_process.attach(process_id)) {
-        std::cerr << "Failed to attach to process: " << process_id << "\n";
-    }
+    return _process.attach(process_id, read_only);
 }
 
-void Hack::attach(const string& process_name)
+bool Hack::attach(const string& process_name, bool read_only)
 {
     if (_process.is_attached()) {
         _process.detach();
     }
-    if (!_process.attach(process_name)) {
-        std::cerr << "Failed to attach to process: " << process_name << "\n";
-    }
+    return _process.attach(process_name, read_only);
 }
 
 void Hack::detach()
@@ -232,7 +241,7 @@ uptr Hack::find(i8 value, uptr begin, usize size) const
 std::vector<uptr> Hack::scan(Scan& scan) const
 {
     std::vector<uptr> results;
-    do_fast_memory_scan(usize(scan.threaded), results, _process, scan.data(), scan.value_size, scan.begin, scan.size, scan.max_results, scan.regex);
+    do_fast_memory_scan(usize(scan.threaded), results, _process, scan.data(), scan.value_size, scan.begin, scan.size, scan.max_results, scan.requested_protection(), scan.regex);
     return results;
 }
 
@@ -395,6 +404,19 @@ const u8* Hack::Scan::data() const
 const u64 Hack::Scan::type_id() const
 {
     return type_hash;
+}
+
+Memory::Protect Hack::Scan::requested_protection() const
+{
+    u32 protect{UINT32_MAX};
+    if (!read) protect &= ~u32(Memory::Protect::READ_ONLY);
+    if (!write) protect &= ~u32(Memory::Protect::WRITE_COMBINE);
+    if (!execute) protect &= ~u32(Memory::Protect::EXECUTE);
+    if (!read  && !write) protect &= ~u32(Memory::Protect::READ_WRITE);
+    if (!read  && !execute) protect &= ~u32(Memory::Protect::EXECUTE_READ);
+    if (!write && !execute) protect &= ~u32(Memory::Protect::EXECUTE_WRITE_COPY);
+    if (!read && !write && !execute) protect &= ~u32(Memory::Protect::EXECUTE_READ_WRITE);
+    return Memory::Protect(protect);
 }
 
 void Hack::Scan::set_value(u64 type_hash, const u8* data, usize value_size)

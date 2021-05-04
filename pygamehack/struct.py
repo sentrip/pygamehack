@@ -2,7 +2,7 @@ from abc import ABC
 from typing import Optional, Union
 
 from pygamehack.c import Address
-from .struct_meta import StructMeta, StructInfo, StructData
+from .struct_meta import StructMeta, StructInfo, StructData, StructDefinition
 
 
 __all__ = ['StructMeta', 'StructInfo', 'Struct']
@@ -20,8 +20,6 @@ class Struct(ABC, metaclass=StructMeta):
         class MyStruct(gh.Struct):
             value_1: gh.uint = 0x1C
 
-        gh.Struct.define_types()
-
     #########################################################################################
     ########## Nested struct usage: #########################################################
     #########################################################################################
@@ -34,8 +32,6 @@ class Struct(ABC, metaclass=StructMeta):
         class MyStructParent(gh.Struct): # Parent
             my_struct: MyStructChild = 0x1C
 
-        gh.Struct.define_types()
-
     #########################################################################################
     ########## Nested struct with forward declarations usage: ###############################
     #########################################################################################
@@ -47,13 +43,7 @@ class Struct(ABC, metaclass=StructMeta):
         class MyStructChild(gh.Struct):  # Child
             value_1: gh.uint = 0x4
             value_2: gh.uint = [0x8, 0xC]
-
-        gh.Struct.define_types()
     """
-    @staticmethod
-    def define_types(arch: int):
-        StructMeta.define_types(arch)
-
     @staticmethod
     def clear_types():
         StructMeta.clear_types()
@@ -61,6 +51,10 @@ class Struct(ABC, metaclass=StructMeta):
     @staticmethod
     def is_struct(o: Union['Struct', StructMeta]):
         return StructMeta.is_struct(o)
+
+    @staticmethod
+    def named(name: str, arch: int) -> StructDefinition:
+        return StructMeta.named(name, arch)
 
     @staticmethod
     def iter_variables(struct: 'Struct'):
@@ -76,22 +70,22 @@ class Struct(ABC, metaclass=StructMeta):
     _info = StructInfo()
 
     def __init__(self, address: Optional[Address], *args, **kwargs):
-        raise NotImplementedError
+        pass
 
     def dataclass(self, **properties) -> StructData:
-        raise NotImplementedError
+        return StructData(self.__class__)
 
     def get(self) -> 'Struct':
-        raise NotImplementedError
+        return self
 
     def read(self) -> 'Struct':
-        raise NotImplementedError
+        return self
 
     def write(self, value: Union['Struct', StructData]):
-        raise NotImplementedError
+        return
 
     def flush(self):
-        raise NotImplementedError
+        return
 
     def reset(self):
-        raise NotImplementedError
+        return

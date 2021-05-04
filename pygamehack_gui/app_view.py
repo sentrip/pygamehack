@@ -23,9 +23,6 @@ class TestProgram(gh.Struct):
     n     : IntTypes        = 0x10
 
 
-gh.Struct.define_types(64)
-    
-
 
 class App(tk.Tk):
     WIDTH = 1200

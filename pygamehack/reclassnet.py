@@ -209,7 +209,7 @@ class Parse:
 
     @staticmethod
     def class_sizes_and_offsets(classes, platform):
-        from .struct_meta import _sort_by_dependency
+        from .struct_meta import StructDependencies
 
         # Sort classes in reverse dependency order
         dependencies = {}
@@ -218,7 +218,7 @@ class Parse:
             for child in parent.fields.values():
                 if isinstance(child, ReClassNet.Class):
                     dependencies[parent.name].append(child.name)
-        _sort_by_dependency(classes, dependencies, lambda t: t.name)
+        StructDependencies.sort(classes, dependencies, lambda t: t.name)
         
         # Calculate class sizes now that all the classes have been sorted
         calc = {}

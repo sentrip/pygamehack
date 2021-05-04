@@ -24,8 +24,6 @@ def test_program_types(app):
     types = Dummy()
     types.TestProgram = TestProgram
     types.IntTypes = IntTypes
-    
-    gh.Struct.define_types(app.arch)
 
     yield types
 

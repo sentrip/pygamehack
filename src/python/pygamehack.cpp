@@ -64,6 +64,10 @@ void define_process(py::module& m)
                 "Is the instance attached to a running process")
 
         .def_property_readonly(
+            "read_only", &Process::is_read_only,
+                "Is the process open in read-only mode")
+
+        .def_property_readonly(
             "ptr_size", &Process::get_ptr_size,
                 "Size of a pointer in bytes in the target process")
 
@@ -434,14 +438,14 @@ void define_hack(py::module& m)
                 "The process used by the hack")
         
         .def(
-            "attach", (void(Hack::*)(u32))&Hack::attach,
+            "attach", (bool(Hack::*)(u32, bool))&Hack::attach,
                 "Attach to a process with the given process id",
-                "process_id"_a)
+                "process_id"_a, py::kw_only(), "read_only"_a=false)
 
       .def(
-            "attach", (void(Hack::*)(const string&))&Hack::attach,
+            "attach", (bool(Hack::*)(const string&, bool))&Hack::attach,
                 "Attach to a process with the given process name",
-                "process_name"_a)
+                "process_name"_a, py::kw_only(), "read_only"_a=false)
 
         .def(
             "detach", &Hack::detach, 

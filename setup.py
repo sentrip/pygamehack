@@ -25,7 +25,7 @@ setup(
     long_description="",
     description='Python game hacking interface',
     packages=[
-        'pygamehack', 'pygamehack.gdb', 'pygamehack.types',
+        'pygamehack', 'pygamehack.gdb',
         'pygamehack_gui', 'pygamehack_gui.core'
     ],
     ext_modules=[Pybind11Extension(
