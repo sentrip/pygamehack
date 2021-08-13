@@ -3,7 +3,7 @@ from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 
 
-__version__ = "1.0.7"
+__version__ = "1.0.8"
 
 # The directory containing this file
 HERE = pathlib.Path(__file__).parent
