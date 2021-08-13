@@ -1,10 +1,15 @@
-import os, sys, subprocess
+import os, pathlib, sys, subprocess
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 
 
 __version__ = "1.0.0"
 
+# The directory containing this file
+HERE = pathlib.Path(__file__).parent
+
+# The text of the README file
+README = (HERE / "README.md").read_text()
 
 # Convert distutils Windows platform specifiers to CMake -A arguments
 PLAT_TO_CMAKE = {
@@ -106,7 +111,8 @@ setup(
     author="Djordje Pepic",
     author_email="djordje.m.pepic@gmail.com",
     url="https://github.com/sentrip/pygamehack",
-    long_description="",
+    long_description=README,
+    long_description_content_type="text/markdown",
     description='Python game hacking interface',
     ext_modules=[CMakeExtension("pygamehack.c", sourcedir="src")],
     packages=[
