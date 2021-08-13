@@ -30,6 +30,12 @@ if __name__ == '__main__':
         os.system('python setup.py install')
         os.system('pytest -s ' + ' '.join(sys.argv[2:] if len(sys.argv) > 2 else []))
 
+    elif sys.argv[1] == 'r':
+        assert len(sys.argv) == 3, "Must provide release type (patch, minor, major)"
+        os.system('bumpversion %s' % sys.argv[2])
+        os.system('git push')
+        os.system('git push --tags')
+
     elif sys.argv[1] == 'cloc':
         os.system('cloc src/ pygamehack/ pygamehack_gui/ %s --exclude-dir external --exclude-lang=XML,CMake' % ' '.join(sys.argv[2:]))
 
