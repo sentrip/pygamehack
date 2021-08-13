@@ -84,7 +84,7 @@ def test_process_kill(program_name):
 
     gh.Process.kill(program.pid)
 
-    time.sleep(0.001)
+    time.sleep(0.01)
 
     assert not hack.process.attached
 

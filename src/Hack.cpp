@@ -215,17 +215,17 @@ const Process& Hack::process() const
 
 bool Hack::attach(u32 process_id, bool read_only)
 {
-//    if (_process.is_attached()) {
-//        _process.detach();
-//    }
+    if (_process.is_attached()) {
+        _process.detach();
+    }
     return _process.attach(process_id, read_only);
 }
 
 bool Hack::attach(const string& process_name, bool read_only)
 {
-//    if (_process.is_attached()) {
-//        _process.detach();
-//    }
+    if (_process.is_attached()) {
+        _process.detach();
+    }
     return _process.attach(process_name, read_only);
 }
 
