@@ -48,3 +48,19 @@ jobs:
         run: |
           pytest
 # pytest --junitxml=junit/test-results.xml --cov=com --cov-report=xml --cov-report=html
+
+      - name: Build a binary wheel and a source tarball
+        if: startsWith(github.ref, 'refs/tags')
+        run: |
+          python -m
+          build
+          --sdist
+          --wheel
+          --outdir dist/
+          .
+
+      - name: Publish distribution 📦 to PyPI
+        if: startsWith(github.ref, 'refs/tags')
+        uses: pypa/gh-action-pypi-publish@master
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
