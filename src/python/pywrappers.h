@@ -122,10 +122,10 @@ static constexpr auto buffer_write_string = [](Buffer& self, uptr offset, const 
 
 //region Python wrappers - Hack
 
-static constexpr auto hack_find = [](Hack& self, i8 value, uptr begin, usize size)
+static constexpr auto hack_find = [](Hack& self, i64 value, uptr begin, usize size)
 {
     py::gil_scoped_release release;
-    return self.find(value, begin, size);
+    return self.find(i8(value), begin, size);
 };
 
 static constexpr auto hack_scan = [](Hack& self, Hack::Scan& scan)
@@ -219,17 +219,24 @@ static constexpr auto hack_scan_set_value = [](Hack::Scan& self, py::object& val
 
 //region Python wrappers - Instruction
 
-static constexpr auto instruction_iter = [](const string& raw_code, bool break_on_return, Instruction::Mode m)
+static constexpr auto instruction_decoder_create = [](Process::Arch arch)
+{
+    return Instruction::Decoder(
+        arch == Process::Arch::X64 ? Instruction::MachineMode::LONG_64 : Instruction::MachineMode::LEGACY_32,
+        arch == Process::Arch::X64 ? Instruction::AddressWidth::WIDTH_64 : Instruction::AddressWidth::WIDTH_32);
+};
+
+static constexpr auto instruction_iter = [](const Instruction::Decoder& decoder, const string& data)
 {
     return py::make_iterator(
-        InstructionIter(raw_code, m, break_on_return),
-        InstructionIter(raw_code, m, break_on_return, UINT32_MAX)
+        Instruction::Iterator(&decoder, (const u8*)data.c_str(), data.size()),
+        Instruction::Iterator(&decoder)
     );
 };
 
-static constexpr auto instruction_extract_searchable_bytes = [](const string& raw_code, usize last_instruction_offset)
+static constexpr auto instruction_extract_searchable_bytes = [](const Instruction::Decoder& decoder, const string& raw_code, uptr target_instruction_offset, usize max_size)
 {
-    auto [code, offset, size] = Instruction::extract_searchable_bytes(raw_code, last_instruction_offset);
+    auto [code, offset, size] = decoder.extract_searchable_bytes(raw_code, target_instruction_offset, max_size);
     return py::make_tuple(py::bytes(code), offset, size);
 };
 

@@ -29,4 +29,4 @@ function(add_test_program PROGRAM_NAME PROGRAM_SOURCE)
 endfunction()
 
 
-add_test_program(TestProgram TestProgram.cpp)
+add_test_program(TestProgram TestProgram2.cpp)

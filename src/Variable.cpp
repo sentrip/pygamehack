@@ -42,9 +42,9 @@ void VariableBufferBase::write(const u8* data, usize size, uptr offset)
 
 void VariableBufferBase::flush(uptr size, uptr offset) const
 {
-    PGH_ASSERT(_address->loaded(), "Attempting to write a variable to an address that is not loaded");
     uptr real_offset = offset + offset_in_parent();
-    variable_write(address(), real_offset, value.data() + offset, clamped_size(offset, size, value.size()));
+    usize real_size = clamped_size(offset, size, value.size());
+    variable_write(address(), real_offset, value.data() + offset, real_size);
 }
 
 const Address& VariableBufferBase::address() const

@@ -9,8 +9,8 @@ from .code import Code, CodeFindConfig, CodeFindTarget, CodeFinder, CodeScanResu
 __all__ = [
     # pygamehack.c
     'Address', 'Buffer', 'Hack',
-    'Process', 'ProcessInfo',
-    'Instruction', 'Operand', 'MemoryScan',
+    'Process', 'ProcessInfo', 'MemoryScan',
+    'Instruction', 'InstructionDecoder',
     'CheatEnginePointerScanSettings',
     # pygamhack.c variable types
     'i8', 'i16', 'i32', 'i64',

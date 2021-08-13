@@ -5,8 +5,6 @@
 
 namespace pygamehack {
 
-//region Python wrappers - ToString
-
 template<typename T>
 struct TypeName { const char* operator()() const noexcept { return ""; } };
 
@@ -48,6 +46,22 @@ static constexpr auto process_tostring = [](Process& v)
 {
     string s{"Process(pid="};
     s.append(std::to_string(v.pid()));
+    s.append(")");
+    return s;
+};
+
+static constexpr auto process_info_tostring = [](ProcessInfo& v)
+{
+    string s{"ProcessInfo(name="};
+    s.append(v.name);
+    s.append(", id=");
+    s.append(std::to_string(v.id));
+    s.append(", parent_id=");
+    s.append(std::to_string(v.parent_id));
+    s.append(", size=");
+    s.append(std::to_string(v.size));
+    s.append(", thread_count=");
+    s.append(std::to_string(v.thread_count));
     s.append(")");
     return s;
 };
@@ -102,14 +116,6 @@ static constexpr string variable_tostring(Variable<T>& v)
     return s;
 }
 
-static constexpr auto instruction_tostring = [](Instruction& v)
-{
-    string s{"Instruction(type="};
-    FOR_EACH_INSTRUCTION_TYPE([&](Instruction::Type t, const char* name){ if (t == v.type) { s.append(name); } })
-    s.append(")");
-    return s;
-};
-
 static constexpr auto hack_cheat_engine_settings_tostring = [](Hack::CE::Settings& settings)
 {
     string s{"CheatEnginePointerScanSettings(max_level="};
@@ -159,7 +165,15 @@ static constexpr auto hack_scan_tostring = [](Hack::Scan& scan)
     return s;
 };
 
-//endregion
+/*
+static constexpr auto instruction_tostring = [](Instruction& v)
+{
+    string s{"Instruction(type="};
+    FOR_EACH_INSTRUCTION_TYPE([&](Instruction::Type t, const char* name){ if (t == v.type) { s.append(name); } })
+    s.append(")");
+    return s;
+};
+*/
 
 }
 

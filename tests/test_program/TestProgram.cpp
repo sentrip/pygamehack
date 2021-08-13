@@ -49,6 +49,32 @@ struct NestedPtrTypes {
 };
 
 
+struct Player {
+    char name[8]{"player0"};
+    uint32_t pos_x{}, pos_y{};
+};
+
+
+struct Game {
+    uint64_t pad0{};
+    uint64_t marker{};
+    Player* players{};
+
+    Game() {
+        players = new Player[4]{};
+        for (uint32_t i = 0; i < 4; ++i) {
+            players[i].name[6] = char(48 + i + 1);
+            players[i].pos_x = (i + 1) * 50;
+            players[i].pos_y = (4 - (i + 1)) * 20;
+        }
+    }
+    ~Game() {
+        delete[] players;
+    }
+};
+
+
+
 struct Application {
 	static volatile uint32_t marker[4];
 	static Application main;
@@ -64,6 +90,8 @@ struct Application {
     volatile uint32_t* marker_pointers[8]{marker, marker, marker, marker, marker, marker, marker, marker};
 
     NestedPtrTypes nested_ptr{};
+
+//    Game* game{new Game{}};
 
 	Application() {}
 	
@@ -88,6 +116,13 @@ struct Application {
         std::cout << "PtrTypes - IntTypes          - " << "0x" << std::hex << &ptr.n << "\n";
 
         std::cout << "NestedPtrTypes               - " << "0x" << std::hex << &nested_ptr.m << "\n";
+
+//        std::cout << "Game*                        - " << "0x" << std::hex << &game << "\n";
+//        std::cout << "Game                         - " << "0x" << std::hex << game << "\n";
+//        std::cout << "Game - Player 1              - " << "0x" << std::hex << &game->players[0] << "\n";
+//        std::cout << "Game - Player 2              - " << "0x" << std::hex << &game->players[1] << "\n";
+//        std::cout << "Game - Player 3              - " << "0x" << std::hex << &game->players[2] << "\n";
+//        std::cout << "Game - Player 4              - " << "0x" << std::hex << &game->players[3] << "\n";
 
         if (!std::filesystem::exists("MarkerAddress" ARCH_SUFFIX ".txt")) {
             std::ofstream output{"MarkerAddress" ARCH_SUFFIX ".txt"};

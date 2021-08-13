@@ -10,7 +10,7 @@ def gdb_path():
     return 'C:\\MinGW\\bin\\gdb.exe'
 
 
-# @pytest.mark.skip
+@pytest.mark.skip
 def test_gdb(hack, app, gdb_path):
     hack.attach(app.pid)
     
@@ -27,23 +27,24 @@ def test_gdb(hack, app, gdb_path):
         previous = (previous + 1) % 4
         updated = (updated + 1) % 4
 
-    w = Watch('w1', app.addr.marker + 12, assert_watch)
-    w.c_type = 'unsigned int'
+    for addr in app.addr.roots:
+        w = Watch('w1', addr + 8, assert_watch)
+        w.c_type = 'unsigned int'
 
-    gdb.add_watch(w)
-    
-    with gdb.continue_wait():
-        hack.write_u32(app.addr.marker + 8, 1)
+        gdb.add_watch(w)
 
-    # with gdb.continue_wait():
-    #     hack.write_u32(app.addr.marker + 8, 1)
-    #
-    # with gdb.continue_wait():
-    #     hack.write_u32(app.addr.marker + 8, 1)
-    #
-    # with gdb.continue_wait():
-    #     hack.write_u32(app.addr.marker + 8, 1)
-    
-    gdb.remove_watch(w)
+        with gdb.continue_wait():
+            hack.write_u32(addr + 8, 1)
+
+        # with gdb.continue_wait():
+        #     hack.write_u32(addr + 8, 1)
+        #
+        # with gdb.continue_wait():
+        #     hack.write_u32(addr + 8, 1)
+        #
+        # with gdb.continue_wait():
+        #     hack.write_u32(addr + 8, 1)
+
+        gdb.remove_watch(w)
 
     gdb.detach()

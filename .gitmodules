@@ -1,0 +1,6 @@
+[submodule "src/external/pybind11"]
+	path = src/external/pybind11
+	url = https://github.com/pybind/pybind11.git
+[submodule "src/external/zydis"]
+	path = src/external/zydis
+	url = https://github.com/zyantific/zydis.git

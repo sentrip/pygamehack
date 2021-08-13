@@ -61,13 +61,13 @@ static Process::iter_region_callback process_region_func(std::vector<uptr>& resu
                 if (memcmp(&data[i], value, std::min<usize>(rsize - i, value_size)) == 0) {
                     if (mutex) {
                         std::unique_lock<std::mutex> lock{*mutex};
-                        results.push_back(rbegin + i * value_size);
+                        results.push_back(rbegin + i);
                         if (max_results && results.size() >= max_results) {
                             return true;
                         }
                     }
                     else {
-                        results.push_back(rbegin + i * value_size);
+                        results.push_back(rbegin + i);
                         if (max_results && results.size() >= max_results) {
                             return true;
                         }
@@ -195,7 +195,9 @@ static void do_fast_memory_scan_reduce(usize n_threads, std::vector<uptr>& resul
 
 //region Hack
 
-Hack::Hack()
+Hack::Hack():
+    _process{},
+    _update_mask{UINT32_MAX}
 {
     // Add empty string that default-constructed addresses can return as their name
     _address_names.add("");
@@ -213,17 +215,17 @@ const Process& Hack::process() const
 
 bool Hack::attach(u32 process_id, bool read_only)
 {
-    if (_process.is_attached()) {
-        _process.detach();
-    }
+//    if (_process.is_attached()) {
+//        _process.detach();
+//    }
     return _process.attach(process_id, read_only);
 }
 
 bool Hack::attach(const string& process_name, bool read_only)
 {
-    if (_process.is_attached()) {
-        _process.detach();
-    }
+//    if (_process.is_attached()) {
+//        _process.detach();
+//    }
     return _process.attach(process_name, read_only);
 }
 

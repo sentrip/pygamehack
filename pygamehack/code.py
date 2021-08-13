@@ -5,7 +5,7 @@ from collections import namedtuple, deque
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Tuple, Optional, Union
 
-from pygamehack.c import Address, Instruction, Hack, MemoryScan
+from pygamehack.c import Address, Instruction, InstructionDecoder, Hack, MemoryScan, Process
 from .gdb import GDB, Watch
 from .struct import Struct
 
@@ -129,7 +129,7 @@ class CodeScanner(object):
 #region Code Find Implementation
 
 WATCH_TRIGGER_MAX_RETRIES = 5
-INSTRUCTION_READ_DISTANCE = 18
+INSTRUCTION_READ_DISTANCE = 16
 
 
 def _code_find_in_process(hack, to_find):
@@ -204,7 +204,11 @@ def _code_on_watch_trigger(name, watch, data, hack, modules, gdb, results):
     # Try calculate best memory range in which to find the code for speeding up future scans
     begin, size = _code_get_best_begin_and_size_for_scans(hack, modules, instruction_address)
     # Extract searchable bytes from the raw code near the instruction address
-    searchable_code, offset, offset_size = Instruction.extract_searchable_bytes(raw_code, INSTRUCTION_READ_DISTANCE)
+    decoder = InstructionDecoder(hack.process.arch)
+    for (o, i) in decoder.iter(raw_code):
+        print(o, decoder.format(i))
+
+    searchable_code, offset, offset_size = decoder.extract_searchable_bytes(raw_code, INSTRUCTION_READ_DISTANCE - 1)
     # Add code result when everything has been calculated
     results.append((name, Code(
         offset=offset,
@@ -256,13 +260,13 @@ def _code_scan_in_process(hack, code):
 
     # First scan preferred region
     # results = hack.scan(raw_code, begin, size, 1, True, False)
-    results = hack.scan(MemoryScan(raw_code, begin, size, max_results=1, regex=True, threaded=False))
+    results = hack.scan(MemoryScan.str(raw_code, begin, size, max_results=1, regex=True, threaded=False))
 
     # Otherwise scan entire memory range
     if not results:
         # TODO: scan only target process memory instead of whole thing?
         # results = hack.scan(raw_code, 0, hack.process.max_ptr, 1, True)
-        results = hack.scan(MemoryScan(raw_code, 0, hack.process.max_ptr, max_results=1, regex=True, threaded=False))
+        results = hack.scan(MemoryScan.str(raw_code, 0, hack.process.max_ptr, max_results=1, regex=True, threaded=False))
 
         if not results:
             raise RuntimeError(f'Did not find any results for Code[{code.code}]')
@@ -271,9 +275,10 @@ def _code_scan_in_process(hack, code):
     address = results[0]
     data = hack.read_bytes(address, len(raw_code))
 
-    # print(data)
-    # for offset, inst in Instruction.iter(data):
-    #     print(offset, inst.to_string())
+    decoder = InstructionDecoder(hack.process.arch)
+    print(data)
+    for offset, inst in decoder.iter(data):
+        print(offset, decoder.format(inst))
 
     offset = _code_unpack_offset(data, code.offset, code.offset_size)
     return CodeScanResult(address, offset)
@@ -282,7 +287,7 @@ def _code_scan_in_process(hack, code):
 def _code_bytes_to_string(raw_code: bytes) -> str:
     raw_code_string = hexlify(raw_code).decode('utf8').upper()
     raw_code_string = raw_code_string.replace(_CHAR_PERIOD_IN_HEX, _CHAR_PERIOD_REPLACEMENT)
-    return re.sub('[0-9A-Z?]{2}', lambda m: m.group(0) + ' ', raw_code_string)[:-1]
+    return re.sub('[0-9A-Z?]{2} ?', lambda m: m.group(0) + ' ', raw_code_string)[:-1]
 
 
 def _code_scan_get_begin_size(hack, code) -> (int, int):

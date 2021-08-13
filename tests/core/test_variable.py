@@ -1,15 +1,30 @@
 import pygamehack as gh
 
-# TODO: Test pointer variable
-# TODO: Test usize variable
-# TODO: Test nested buffer read/write
-
 
 def test_buffer_variable_getitem():
     assert gh.buf[8] == (gh.buf, 8)
     # assert gh.p_buf[8] == (gh.p_buf, 8)
 
 
+# get/reset
+
+#region Variable<Buffer>
+
+# Buffer - create view/size/view tests
+# Buffer - read/write/flush with size/offset
+# Buffer - Nested read/write/flush with size/offset
+
+#endregion
+
+#region Variable<String>
+
+# String - read/write/flush with strings
+# String - slice/strlen
+
+#endregion
+
+
+"""
 def test_variable_basic_read(hack, app):
     hack.attach(app.pid)
 
@@ -158,3 +173,4 @@ def test_variable_buffer_write(hack, app, set_cleanup):
 #
 #     assert buffer.read_u32( 0) == 10
 #     assert buffer.read_u32( 4) == 20
+"""

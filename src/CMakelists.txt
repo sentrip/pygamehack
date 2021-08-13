@@ -1,0 +1,28 @@
+cmake_minimum_required(VERSION "3.15")
+project("pygamehack")
+
+set(CMAKE_CXX_STANDARD 17)
+
+add_subdirectory("external/pybind11")
+
+
+# Register Zydis dependency.
+# Disable build of tools and examples.
+option(ZYDIS_BUILD_TOOLS "" OFF)
+option(ZYDIS_BUILD_EXAMPLES "" OFF)
+add_subdirectory("external/zydis")
+
+# Add our project executable
+pybind11_add_module(c 
+    Address.cpp
+    Buffer.cpp
+    Hack.cpp
+    Instruction.cpp
+    Process.cpp
+    Variable.cpp
+    python/pygamehack.cpp
+    external/libdasm.c)
+
+# Have CMake link our project executable against Zydis.
+target_link_libraries(c PRIVATE "Zydis")
+target_compile_definitions(c PRIVATE VERSION_INFO=${VERSION_INFO})

@@ -21,6 +21,10 @@
 #include <locale>
 #include <codecvt>
 
+
+#include <strsafe.h>
+#include <iostream>
+
 #endif
 
 namespace pygamehack {
@@ -28,6 +32,8 @@ namespace pygamehack {
 #ifdef _MSC_VER
 
 #define API_CLASS WindowsProcessAPI
+
+#define WRITE_ACCESS (PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE)
 
 // TODO: WindowsProcessAPI safety asserts/checks
 class WindowsProcessAPI {
@@ -48,12 +54,14 @@ public:
 
 	bool is_attached() const
     {
-	    return (handle != nullptr) && (WaitForSingleObject(handle, 0) == WAIT_OBJECT_0 ? false : true);
+	    if (!handle) return false;
+	    auto r = WaitForSingleObject(handle, 0);
+	    return r == WAIT_TIMEOUT ? true : (r == WAIT_OBJECT_0 ? false : true);
     }
 
     bool is_read_only() const
     {
-        return (access_rights & PROCESS_VM_WRITE) > 0;
+        return (access_rights & WRITE_ACCESS) == 0;
     }
 
 	bool is_64_bit() const
@@ -130,13 +138,13 @@ public:
 
 	bool write_memory(void* dst, const void* src, usize size) const
     {
-        PGH_ASSERT(access_rights == PROCESS_ALL_ACCESS, "Cannot write memory in a read-only process");
+        PGH_ASSERT((access_rights & WRITE_ACCESS) == WRITE_ACCESS, "Cannot write memory in a read-only process");
         return WriteProcessMemory(handle, dst, src, size, nullptr);
     }
     
 	Memory::Protect virtual_protect(uptr ptr, usize size, Memory::Protect protect) const
     {
-        PGH_ASSERT(access_rights == PROCESS_ALL_ACCESS, "Cannot modify memory protection in a read-only process");
+        PGH_ASSERT((access_rights & WRITE_ACCESS) == WRITE_ACCESS, "Cannot modify memory protection in a read-only process");
         DWORD old_protect;
         VirtualProtectEx(handle, (LPVOID)ptr, size, get_platform_protect(protect), &old_protect);
         return get_pygamehack_protect(old_protect);
@@ -201,7 +209,7 @@ public:
 
 	void attach(u32 pid, bool read_only = false) {
 	    id = pid;
-        access_rights = !read_only ? PROCESS_ALL_ACCESS : (PROCESS_VM_READ | SYNCHRONIZE);
+        access_rights = (PROCESS_VM_READ | SYNCHRONIZE) | (read_only ? 0u : WRITE_ACCESS);
         handle = OpenProcess(access_rights, NULL, id);
         if (!handle) {
             id = 0;
@@ -224,8 +232,12 @@ public:
 
 	void get_modules(module_map& modules) const
     {
-        HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, id);
-        if (hSnap != INVALID_HANDLE_VALUE) {
+        usize n_retries = 0;
+        HANDLE hSnap = INVALID_HANDLE_VALUE;
+        while (hSnap == INVALID_HANDLE_VALUE) {
+            hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, id);
+            if (hSnap == INVALID_HANDLE_VALUE) continue;
+
             MODULEENTRY32 modEntry;
             modEntry.dwSize = sizeof(modEntry);
             if (Module32First(hSnap, &modEntry)) {
@@ -236,8 +248,8 @@ public:
                     );
                 } while (Module32Next(hSnap, &modEntry));
             }
+            CloseHandle(hSnap);
         }
-        CloseHandle(hSnap);
     }
 
 	void iter_regions(uptr begin, usize size, Process::iter_region_callback&& callback, Memory::Protect protect, bool read, usize block_size) const

@@ -16,6 +16,8 @@ void define_process(py::module& m)
         .def("__exit__", [](Memory& self, py::args a, py::kwargs kw){ self.reset(); });
 
     py::class_<ProcessInfo>(m, "ProcessInfo")
+        .def("__str__", process_info_tostring)
+        .def("__repr__", process_info_tostring)
         .def_readwrite("name", &ProcessInfo::name)
         .def_readwrite("id", &ProcessInfo::id)
         .def_readwrite("parent_id", &ProcessInfo::parent_id)
@@ -614,7 +616,10 @@ void define_variable_buffer(py::module& m, const char(&type_name)[N])
 {
     py::class_<T> variable_class(m, type_name, py::buffer_protocol());
 
-    define_class_getitem_pass_type_args<T>(variable_class);
+    define_class_getitem_pass_type_args_custom<T>(variable_class, [](py::object cls, py::object key){
+        PGH_ASSERT(py::isinstance<py::int_>(key), "You must provide size for a buffer definition: buf[SIZE: int]");
+        return py::make_tuple(cls, key);
+    });
 
     variable_class.def_buffer([](T &v) -> py::buffer_info {
         return py::buffer_info(
@@ -625,7 +630,7 @@ void define_variable_buffer(py::module& m, const char(&type_name)[N])
      });
 
     variable_class
-        .def("__str__", variable_tostring<T>)
+        .def("__str__", variable_tostring<typename T::T>)
 
         .def(
             py::init<Address&, usize>(), py::keep_alive<2, 1>(),
@@ -634,6 +639,11 @@ void define_variable_buffer(py::module& m, const char(&type_name)[N])
 
         .def(
             py::init<T&, uptr, usize>(), py::keep_alive<2, 1>(),
+                "Create a buffer view variable of the given size from the given parent buffer",
+                "parent"_a, "offset"_a, "size"_a)
+
+        .def(
+            py::init([](PyVariableArray& parent, uptr offset, usize size){ return T((VariableBufferBase&)parent, offset, size); }), py::keep_alive<2, 1>(),
                 "Create a buffer view variable of the given size from the given parent buffer",
                 "parent"_a, "offset"_a, "size"_a)
 
@@ -703,12 +713,17 @@ void define_variable_array(py::module& m, const char(&type_name)[N])
 {
     py::class_<T> variable_class(m, type_name, py::buffer_protocol());
 
-    define_class_getitem_pass_type_args_custom<T>(variable_class, [](py::object cls, py::tuple key){
+    define_class_getitem_pass_type_args_custom<T>(variable_class, [](py::object cls, py::object key){
         // TODO: Assert array getitem args are correct
+        PGH_ASSERT(py::isinstance<py::tuple>(key), "You must provide both the type and size for an array definition: arr[TYPE: type, SIZE: int]");
+        auto key_t = py::cast<py::tuple>(key);
+        PGH_ASSERT(py::len(key) == 2, "You must provide both the type and size for an array definition: arr[TYPE: type, SIZE: int]");
+        PGH_ASSERT(py::isinstance<py::type>(key_t[0]), "You must provide both the type and size for an array definition: arr[TYPE: type, SIZE: int]");
+        PGH_ASSERT(py::isinstance<py::int_>(key_t[1]), "You must provide both the type and size for an array definition: arr[TYPE: type, SIZE: int]");
         py::tuple tup(3);
         tup[0] = cls;
-        tup[1] = key[0];
-        tup[2] = key[1];
+        tup[1] = key_t[0];
+        tup[2] = key_t[1];
         return tup;
     });
 
@@ -765,11 +780,14 @@ void define_variable_array(py::module& m, const char(&type_name)[N])
             "reset", &T::reset,
                 "Clear the memory of the local storage buffer")
 
+        .def("__repr__", &T::tostring)
         .def("__len__", &T::length)
         .def("__iter__", &T::iter, py::keep_alive<0, 1>())
         .def("__getitem__", [](T& v, usize n){ return v.getitem(n); })
         .def("__getitem__", [](T& v, py::slice slice){ return v.getitem(slice); })
-        .def("__setitem__", &T::setitem);
+        .def("__setitem__", &T::setitem)
+        .def("__eq__", &T::operator==)
+        .def("__ne__", &T::operator!=);
 
      string const_name = "c_" + string{type_name};
      define_const_variable<T>(m, const_name.c_str());
@@ -796,92 +814,64 @@ void define_variables(py::module& m)
 
 void define_instruction(py::module& m)
 {
-    py::class_<Operand> op_class(m, "Operand");
-    
-    op_class
-        .def_readwrite("type", &Operand::type, "Operand type (register, memory, etc)")
-        .def_readwrite("reg", &Operand::reg, "Register (if any)")
-        .def_readwrite("basereg", &Operand::basereg, "Base register (if any)")
-        .def_readwrite("indexreg", &Operand::indexreg, "Index register (if any)")
-        .def_readwrite("scale", &Operand::scale, "Scale (if any)")
-        .def_readwrite("dispbytes", &Operand::dispbytes, "Displacement bytes (0 = no displacement)")
-        .def_readwrite("dispoffset", &Operand::dispoffset, "Displacement value offset")
-        .def_readwrite("immbytes", &Operand::immbytes, "Immediate bytes (0 = no immediate)")
-        .def_readwrite("immoffset", &Operand::immoffset, "Immediate value offset")
-        .def_readwrite("sectionbytes", &Operand::sectionbytes, "Section prefix bytes (0 = no section prefix)")
-        .def_readwrite("section", &Operand::section, "Section prefix value")
-        .def_readwrite("displacement", &Operand::displacement, "Displacement value")
-        .def_readwrite("immediate", &Operand::immediate, "Immediate value")
-        .def_readwrite("flags", &Operand::flags, "Operand flags");
-        
     py::class_<Instruction> inst_class(m, "Instruction");
-    
-    inst_class.attr("Operand") = op_class;
 
-    py::enum_<Instruction::Type> inst_type(inst_class, "Type");
-    auto def_inst_type = [&](Instruction::Type t, const char* name){ inst_type.value(name, t); };
-    FOR_EACH_INSTRUCTION_TYPE(def_inst_type)
-    inst_type.export_values();
+    py::enum_<Instruction::MachineMode>(inst_class, "Mode")
+        .value("Long64", Instruction::MachineMode::LONG_64)
+        .value("LongCompat32", Instruction::MachineMode::LONG_COMPAT_32)
+        .value("LongCompat16", Instruction::MachineMode::LONG_COMPAT_16)
+        .value("Legacy32", Instruction::MachineMode::LEGACY_32)
+        .value("Legacy16", Instruction::MachineMode::LEGACY_16)
+        .value("Real16", Instruction::MachineMode::REAL_16)
+        .export_values();
 
-    py::enum_<Instruction::Mode>(inst_class, "Mode")
-        .value("M32", Instruction::Mode::M32)
-        .value("M16", Instruction::Mode::M16)
+    py::enum_<Instruction::AddressWidth>(inst_class, "AddressWidth")
+        .value("W16", Instruction::AddressWidth::WIDTH_16)
+        .value("W32", Instruction::AddressWidth::WIDTH_32)
+        .value("W64", Instruction::AddressWidth::WIDTH_64)
         .export_values();
 
     py::enum_<Instruction::Format>(inst_class, "Format")
         .value("ATT", Instruction::Format::ATT)
-        .value("INTEL", Instruction::Format::INTEL)
+        .value("Intel", Instruction::Format::INTEL)
+        .value("IntelMasm", Instruction::Format::INTEL_MASM)
         .export_values();
 
     inst_class
-        .def_readwrite("length", &Instruction::length, "Instruction length")
-        .def_readwrite("type", &Instruction::type, "Instruction type")
-        .def_readwrite("mode", &Instruction::mode, "Addressing mode")
-        .def_readwrite("opcode", &Instruction::opcode, "Actual opcode")
-        .def_readwrite("modrm", &Instruction::modrm, "MODRM byte")
-        .def_readwrite("sib", &Instruction::sib, "SIB byte")
-        .def_readwrite("modrm_offset", &Instruction::modrm_offset, "MODRM byte offset")
-        .def_readwrite("extindex", &Instruction::extindex, "Extension table index")
-        .def_readwrite("fpuindex", &Instruction::fpuindex, "FPU table index")
-        .def_readwrite("dispbytes", &Instruction::dispbytes, "Displacement bytes (0 = no displacement)")
-        .def_readwrite("immbytes", &Instruction::immbytes, "Immediate bytes (0 = no immediate)")
-        .def_readwrite("sectionbytes", &Instruction::sectionbytes, "Section prefix bytes (0 = no section prefix)")
-        .def_readwrite("op1", &Instruction::op1, "First operand (if any)")
-        .def_readwrite("op2", &Instruction::op2, "Second operand (if any)")
-        .def_readwrite("op3", &Instruction::op3, "Additional operand (if any)")
-        .def_readwrite("flags", &Instruction::flags, "Instruction flags")
-        .def_readwrite("eflags_affected", &Instruction::eflags_affected, "Processor eflags affected")
-        .def_readwrite("eflags_used", &Instruction::eflags_used, "Processor eflags used by this instruction")
-        .def_readwrite("iop_written", &Instruction::iop_written, "Mask of affected implied registers (written)")
-        .def_readwrite("iop_read", &Instruction::iop_read, "Mask of affected implied registers (read)")
-        
+        .def_readonly("length", &Instruction::length,
+                        "The length of the instruction in bytes")
+    ;
+
+    py::class_<Instruction::Decoder>(m, "InstructionDecoder")
         .def(
-            "__str__", instruction_tostring)
+            py::init<Instruction::MachineMode, Instruction::AddressWidth>(), 
+                "Create an instruction decoder for the given machine"
+                "mode"_a, "address_width"_a)
+        .def(
+            py::init(instruction_decoder_create),
+                "Create an instruction decoder for the given architecture"
+                "arch"_a)
 
         .def(
-            "to_string", &Instruction::to_string,
-                "Convert Instruction object into a readable assembly string", 
-                "fmt"_a = Instruction::Format::ATT)
+            "set_format", &Instruction::Decoder::set_format,
+                "",
+                "fmt"_a=Instruction::Format::INTEL)
         
-        .def_static(
-            "from_string", &Instruction::from_string,
-                "Disassemble code from raw bytes into an Instruction object",
-                "raw_code"_a, "mode"_a = Instruction::Mode::M32)
-                
-        .def_static(
-            "to_readable_code", &Instruction::to_readable_code,
-                "Disassemble code from raw bytes into a readable string of instructions",
-                "raw_code"_a, "fmt"_a = Instruction::Format::ATT, "mode"_a = Instruction::Mode::M32)
-                
-        .def_static(
+        .def(
+            "format", &Instruction::Decoder::format,
+                "",
+                "instruction"_a, "runtime_address"_a=UINT64_MAX)
+
+        .def(
+            "iter", instruction_iter,
+                "",
+                "data"_a)
+
+        .def(
             "extract_searchable_bytes", instruction_extract_searchable_bytes,
-                "Disassemble code from raw bytes into a readable string of instructions",
-                "raw_code"_a, "last_instruction_offset"_a = UINT32_MAX)
-        
-        .def_static(
-            "iter", instruction_iter, py::keep_alive<0, 1>(), /* keep string alive while iterating */
-                "Iterate instructions from a raw code string",
-                "raw_code"_a, "break_on_return"_a=true, "mode"_a=Instruction::Mode::M32);
+                "",
+                "raw_code"_a, "target_instruction_offset"_a, "max_size"_a=UINT64_MAX)           
+    ;
 }
 
 //endregion

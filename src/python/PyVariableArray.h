@@ -55,10 +55,11 @@ public:
         py::dict modules = py::module_::import("sys").attr("modules");
         py::module m = modules["pygamehack.c"];
         py::function issubclass = modules["builtins"].attr("issubclass");
+        py::object type_type = modules["builtins"].attr("type");
         const char* names[5]{"buf", "str", "c_str", "arr", "c_arr"};
         for (const auto* name: names) {
             py::object c = m.attr(name);
-            if (check_attr(value_type, "is_container") || py::cast<bool>(issubclass(value_type, c))) {
+            if (check_attr(value_type, "is_container") || (py::isinstance(value_type, type_type) && py::cast<bool>(issubclass(value_type, c)))) {
                 is_value_type_buffer_or_container = true;
                 set_non_basic_value_type();
                 return true;
@@ -127,7 +128,7 @@ public:
 
     PyVariableArray& read(usize n, usize starting_at)
     {
-        VariableBufferBase::read(starting_at * value_type_size, n * value_type_size);
+        VariableBufferBase::read(n * value_type_size, starting_at * value_type_size);
         return *this;
     }
 
@@ -238,6 +239,44 @@ public:
         }
     }
 
+    string tostring()
+    {
+        string s{"["};
+        auto it = iter();
+        usize i = 0;
+        for (auto& v: it) {
+            if ((i++) != 0) s.append(", ");
+            s.append(py::cast<string>(v.attr("__str__")()));
+        }
+        s.append("]");
+        return s;
+    }
+
+    bool operator==(const py::object& other)
+    {
+        if (!py::isinstance<PyVariableArray>(other) && !py::isinstance<py::list>(other)) {
+            return false;
+        }
+        if (py::len(other) != length()) {
+            return false;
+        }
+        if (!is_value_type_basic) {
+            return values == other;
+        }
+        usize i = 0;
+        for (const auto& obj: py::iter(other)) {
+            if (obj != getitem(i++)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool operator!=(const py::object& other)
+    {
+        return !(*this == other);
+    }
+
 private:
     py::object create_element(usize i)
     {
@@ -276,7 +315,8 @@ private:
         else if constexpr(std::is_same_v<T, string>) { arr.value.write_string(i, obj.cast<string>()); return; }
         else if constexpr(std::is_same_v<T, Buffer>) { arr.value.write_buffer(i, obj.cast<Buffer&>()); return; }
         else {
-            arr.value.write<T>(i, obj.cast<T>());
+            T v = obj.cast<T>();
+            arr.value.write_value<T>(i, v);
         }
     }
 

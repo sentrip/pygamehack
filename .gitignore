@@ -138,11 +138,9 @@ dmypy.json
 cython_debug/
 
 # Other
-*/build/
-*/build-32/
+build-32/
 .vscode/
 .idea/
-*/MarkerAddress-32.*
-*/MarkerAddress-64.*
-*/TestProgram-32*
-*/TestProgram-64*
+tests/test_program/MarkerAddress-*
+tests/test_program/TestProgram-*
+src/external/old/*

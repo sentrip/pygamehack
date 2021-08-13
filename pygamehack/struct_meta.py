@@ -104,7 +104,7 @@ class StructMeta(ABCMeta):
             process = address.hack.process
         else:
             StructMeta.check_buffer_view_kwargs(address, kwargs)
-            process = kwargs['parent_buffer'].buffer.address.hack.process
+            process = kwargs['parent_buffer'].address.hack.process
         return 32 if process.arch == cgh.Process.Arch.x86 else 64
 
     # Called when a new TYPE is DEFINED (before anything interesting happens)
@@ -228,17 +228,28 @@ class StructDefinition(object):
         has_struct_properties = any(StructMeta.is_struct(t) for t in self.cls.__annotations__.values())
         self.info.is_pod_type = not has_struct_properties and not self.info.is_custom_type
 
+        seen_offsets = {}
         field_indexes = {}
 
         # Parse offsets
         index = 0
         for name, offsets in self.offsets.items():
-            self.offsets[name] = offsets if isinstance(offsets, list) else [offsets]
+            offsets = offsets if isinstance(offsets, list) else [offsets]
+
+            if offsets[0] in seen_offsets:
+                raise RuntimeError(f'Duplicate offsets: {self.cls.__name__}.{name} and '
+                                   f'{self.cls.__name__}.{seen_offsets[offsets[0]]} - {hex(offsets[0])}')
+
+            seen_offsets[offsets[0]] = name
+            self.offsets[name] = offsets
             field_indexes[name] = index
             index += 1
 
         # Parse types
         for name, t in self.cls.__annotations__.items():
+            if name not in self.offsets:
+                raise RuntimeError(f'Did not define offset for property: {self.cls.__name__}.{name}')
+
             # Create field
             field = _StructField(name, t, self, field_indexes[name])
             self.fields[name] = field
@@ -323,6 +334,14 @@ class StructType(object):
 
         return t(*args, **kwargs)
 
+    def __eq__(self, other):
+        if isinstance(other, StructType):
+            return self.type == other.type
+        elif self.is_basic and not self.is_container and not self.is_pointer and isinstance(other, type):
+            return self.type == other
+        else:
+            return False
+
     @property
     def __name__(self):
         if isinstance(self.type, str):
@@ -338,7 +357,9 @@ class StructType(object):
             if self.is_pointer:
                 return _StructDefinitions.ptr_size
             else:
-                return self.type.size * self.element_count
+                # ptr and usize do not have the 'size' property defined at compile time
+                element_size = getattr(self.type, 'size', _StructDefinitions.ptr_size)
+                return element_size * self.element_count
         else:
             return (self.element_size or self.type.size) * self.element_count
 
@@ -400,13 +421,16 @@ class StructType(object):
             raise RuntimeError('Buffer variable definition incorrect, must include size')
         # Regular definition - basic type
         elif StructType.is_basic_type(typ):
-            return StructType(typ, typ.size, 1, False)
+            return StructType(typ, StructType.LAZY_SIZE, 1, False)
         # Regular definition - Struct
         else:
-            return StructType(typ, typ.size, 1, False)
+            return StructType(typ, StructType.LAZY_SIZE, 1, False)
 
     @staticmethod
     def from_tuple(typ: tuple):
+        if len(typ) == 3:
+            return StructType(typ[1], StructType.LAZY_SIZE, typ[2], container_type=typ[0])
+
         if not isinstance(typ, tuple) \
                 or len(typ) != 2 \
                 or not isinstance(typ[1], int):
@@ -605,6 +629,7 @@ class _StructMethods(object):
     def read(self):
         if hasattr(self, 'buffer'):
             # TODO: Read nested buffers
+            # print(self.buffer, self.buffer.get())
             self.buffer.get().read_from(self.address.value)
         return self
 
@@ -760,7 +785,7 @@ class _StructField(object):
     @staticmethod
     def create_variable_getter(variable, is_buffer):
         # Closure that loads the variable's address if it has not been loaded
-        if is_buffer:
+        if is_buffer or isinstance(variable, cgh.arr) or isinstance(variable, cgh.c_arr):
             def _get(s):
                 if not variable.address.loaded:
                     variable.address.load()
@@ -782,7 +807,11 @@ class _StructField(object):
         def _set(s, v):
             if not variable.address.loaded:
                 variable.address.load()
-            return variable.write(v)
+
+            variable.write(v)
+
+            if isinstance(variable, cgh.str):
+                variable.flush()
 
         return _set
 

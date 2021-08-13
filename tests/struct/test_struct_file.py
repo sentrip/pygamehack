@@ -15,7 +15,7 @@ def temp_struct_file():
     os.remove(temp_name)
 
 
-# @pytest.mark.skip
+@pytest.mark.skip
 def test_struct_file(temp_struct_file):
     sf = StructFile(temp_struct_file)
     sf.load()

@@ -1,8 +1,58 @@
 import pygamehack as gh
+import pytest
 
-# TODO: Test buffer read/write bool/float/double/ptr/usize
+
+def test_buffer_create():
+    hack = gh.Hack()
+
+    # Owning
+    buf1 = gh.Buffer(hack, 32)
+    assert 32 == buf1.size
+
+    assert 0 == buf1.read_u32(16)
+    buf1.write_u32(16, 10)
+    assert 10 == buf1.read_u32(16)
+
+    # View
+    buf2 = gh.Buffer(buf1, 16, 16)
+    assert 16 == buf2.size
+
+    assert 10 == buf2.read_u32(0)
+    buf2.write_u32(0, 4)
+    assert 4 == buf1.read_u32(16)
+    assert 4 == buf2.read_u32(0)
+
+    # Clear
+    buf1.clear()
+    assert 0 == buf1.read_u32(16)
+    assert 0 == buf2.read_u32(0)
 
 
+def test_buffer_create_incorrect():
+    hack = gh.Hack()
+    buf1 = gh.Buffer(hack, 32)
+
+    # Buffer with size=0
+    with pytest.raises(RuntimeError):
+        buf2 = gh.Buffer(hack, 0)
+
+    # View with size=0
+    with pytest.raises(RuntimeError):
+        buf2 = gh.Buffer(buf1, 16, 0)
+
+    # View that exceeds memory range of parent
+    with pytest.raises(RuntimeError):
+        buf2 = gh.Buffer(buf1, 32, 16)
+
+    with pytest.raises(RuntimeError):
+        buf2 = gh.Buffer(buf1, 16, 32)
+
+# read_from/write_to
+# read_buffer/write_buffer
+# read_string/write_string/strlen
+
+
+"""
 def test_buffer_read_basic(hack, app):
     hack.attach(app.pid)
     
@@ -108,3 +158,4 @@ def test_buffer_write_buffer(hack, app):
     buffer.write_buffer(32, other_buffer)
     
     assert buffer.read_string(32, len("StringTest")) == "StringTest"
+"""

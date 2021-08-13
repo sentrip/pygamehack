@@ -72,6 +72,7 @@ protected:
 template<>
 class Variable<Buffer>: public VariableBufferBase {
 public:
+    using T = Buffer;
     using VariableBufferBase::VariableBufferBase;
 
     void            write(const Buffer& v, uptr offset = 0);
@@ -86,6 +87,7 @@ private:
 template<>
 class Variable<string> : public VariableBufferBase {
 public:
+    using T = string;
     using VariableBufferBase::VariableBufferBase;
 
     string          get() const;

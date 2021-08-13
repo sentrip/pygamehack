@@ -1,11 +1,60 @@
 import pygamehack as gh
 
-# TODO: Test hack read/write bool/float/double/ptr/usize
-# TODO: Test hack scan string
-# TODO: Test hack arbitrary regex scan
-# TODO: Test hack scan_modify
+
+def test_hack_attach_detach(app):
+    hack = gh.Hack()
+
+    # Unattached
+    assert not hack.process.attached
+
+    # Attach different ways
+    for arg in [app.pid, app.program_name]:
+        for read_only in [False, True]:
+            hack.detach()
+            hack.attach(arg, read_only=read_only)
+
+            assert hack.process.attached
+            assert hack.process.read_only == read_only
+            assert hack.process.pid == app.pid
+
+    # Attach/detach repeatedly
+    hack.detach()
+    for i in range(10):
+        assert not hack.process.attached
+        hack.attach(app.pid)
+        assert hack.process.attached
+        hack.detach()
+        assert not hack.process.attached
 
 
+def test_hack_find_strlen(hack, app):
+    for addr in app.addr.roots:
+        assert hack.find(app.values.Basic.i16, addr + app.offsets.Basic.i16, 32) == 0
+        assert hack.find(app.values.Basic.i16, addr + app.offsets.Basic.i16 - 16, 32) == 16
+        assert hack.strlen(addr + app.offsets.Basic.str) == len(app.values.Basic.str)
+
+
+def test_hack_scan_type(hack, app):
+    for addr in app.addr.roots:
+        results = hack.scan(getattr(gh.MemoryScan, 'u' + str(app.arch))(
+            app.values.Basic.ptr,
+            addr - 64,
+            128,
+            max_results=1))
+
+        assert len(results) == 1
+        assert results[0] == addr + app.offsets.Basic.ptr
+
+# TODO: Test Hack scan string/regex
+# def test_hack_scan(hack, app):
+#     pass
+
+# TODO: Test Hack scan modify
+# def test_hack_scan_modify(hack, app):
+#     pass
+
+
+"""
 def test_hack_attach(hack, app):
     for item in [app.pid, app.program_name]:
         hack.attach(item)
@@ -143,3 +192,4 @@ def test_hack_scan_type(hack, app):
     )
     assert len(results) == 1
     assert results[0] == app.addr.marker
+"""
