@@ -50,7 +50,7 @@ def marker_address_file(arch, program):
     while not os.path.exists(address_path):
         time.sleep(0.001)
         total_time += 0.001
-        if total_time >= 0.1:
+        if total_time >= 1.0:
             raise RuntimeError("Did not generate address file")
     return address_path
 
