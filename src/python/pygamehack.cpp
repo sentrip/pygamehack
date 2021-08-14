@@ -718,7 +718,7 @@ void define_variable_array(py::module& m, const char(&type_name)[N])
         PGH_ASSERT(py::isinstance<py::tuple>(key), "You must provide both the type and size for an array definition: arr[TYPE: type, SIZE: int]");
         auto key_t = py::cast<py::tuple>(key);
         PGH_ASSERT(py::len(key) == 2, "You must provide both the type and size for an array definition: arr[TYPE: type, SIZE: int]");
-        PGH_ASSERT(py::isinstance<py::type>(key_t[0]), "You must provide both the type and size for an array definition: arr[TYPE: type, SIZE: int]");
+//        PGH_ASSERT(py::isinstance<py::type>(key_t[0]), "You must provide both the type and size for an array definition: arr[TYPE: type, SIZE: int]");
         PGH_ASSERT(py::isinstance<py::int_>(key_t[1]), "You must provide both the type and size for an array definition: arr[TYPE: type, SIZE: int]");
         py::tuple tup(3);
         tup[0] = cls;

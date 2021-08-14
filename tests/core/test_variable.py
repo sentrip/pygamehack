@@ -1,9 +1,34 @@
+import pytest
+
 import pygamehack as gh
+from pygamehack.variable import IBufferVariable
 
 
 def test_buffer_variable_getitem():
     assert gh.buf[8] == (gh.buf, 8)
     # assert gh.p_buf[8] == (gh.p_buf, 8)
+
+
+def test_i_buffer_variable_subclass(reset_structs):
+    class MySubclass(IBufferVariable, gh.buf):
+        pass
+
+    class Indirect(gh.buf):
+        pass
+
+    class MySubclass1(IBufferVariable, Indirect):
+        pass
+
+    with pytest.raises(RuntimeError):
+        class MySubclass2(IBufferVariable):
+            pass
+
+    with pytest.raises(RuntimeError):
+        class Dummy:
+            pass
+
+        class MySubclass3(IBufferVariable, Dummy):
+            pass
 
 
 # get/reset

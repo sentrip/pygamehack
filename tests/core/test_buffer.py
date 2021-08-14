@@ -49,7 +49,28 @@ def test_buffer_create_incorrect():
 
 # read_from/write_to
 # read_buffer/write_buffer
-# read_string/write_string/strlen
+
+
+def test_buffer_read_string(hack, app):
+    for addr in app.addr.roots:
+        buffer = gh.Buffer(hack, 32)
+        buffer.read_from(addr + app.offsets.Basic.str, buffer.size)
+
+        assert buffer.strlen(0) == len("TestStr")
+        assert buffer.read_string(0, len("TestStr")) == "TestStr"
+        assert buffer.read_bytes(0, len("TestStr")) == b"TestStr"
+
+
+def test_buffer_write_string(hack, app, reset_app):
+    for addr in app.addr.roots:
+        buffer = gh.Buffer(hack, 32)
+        buffer.read_from(addr + app.offsets.Basic.str, buffer.size)
+
+        buffer.write_string(0, "StrTest")
+        assert buffer.read_string(0, len("StrTest")) == "StrTest"
+
+        with pytest.raises(RuntimeError):
+            buffer.write_string(0, "0" * 100)
 
 
 """

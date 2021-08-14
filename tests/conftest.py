@@ -1,11 +1,16 @@
 import pytest
 import os
 import time
-import pygamehack as gh
 import subprocess
+import pygamehack as gh
+
 
 class Dummy:
     pass
+
+
+def pytest_addoption(parser):
+    parser.addoption("--no-gdb", action="store_true")
 
 
 def pytest_generate_tests(metafunc):
@@ -105,59 +110,9 @@ def get_app_offsets():
     return offsets
 
 
-def get_default_structs():
-    offsets = get_app_offsets()
-    o = offsets.Basic
-
-    class Basic(gh.Struct):
-        i8: gh.i8 = o.i8
-        i16: gh.i16 = o.i16
-        i32: gh.i32 = o.i32
-        i64: gh.i64 = o.i64
-        u8: gh.u8 = o.u8
-        u16: gh.u16 = o.u16
-        u32: gh.u32 = o.u32
-        u64: gh.u64 = o.u64
-        b: gh.bool = o.b
-        f: gh.float = o.f
-        d: gh.double = o.d
-        str: gh.str[8] = o.str
-        arr: gh.arr[gh.u32, 4] = o.arr
-        sz: gh.usize = o.sz
-        ptr: gh.ptr = o.ptr
-
-    o = offsets.Driver
-
-    class Driver(gh.Struct):
-        dinc: gh.u64 = o.dinc
-        cnt: gh.u64 = o.cnt
-
-    o = offsets.Program
-
-    class Program(gh.Struct):
-        basic: Basic = o.basic
-        driver: Driver = o.driver
-
-    structs = Dummy()
-    structs.Basic = Basic
-    structs.Driver = Driver
-    structs.Program = Program
-    return structs
-
-
 @pytest.fixture
 def basic_name_type_pairs():
     return get_basic_name_type_pairs()
-
-
-@pytest.fixture
-def default_structs():
-    return get_default_structs()
-
-
-@pytest.fixture
-def reset_structs(set_cleanup):
-    set_cleanup(lambda: gh.Struct.clear_types())
 
 
 @pytest.fixture(scope='session')
@@ -264,6 +219,11 @@ def reset_app(hack, app, app_default_memory):
     yield
     for addr in app.addr.roots:
         hack.write_string(addr, app_default_memory)
+
+
+@pytest.fixture
+def reset_structs(set_cleanup):
+    set_cleanup(lambda: gh.Struct.clear_types())
 
 
 """

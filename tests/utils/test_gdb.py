@@ -1,19 +1,31 @@
+import sys
 import pytest
+import pygamehack as gh
 from pygamehack.gdb import GDB, Watch
 
 
 # TODO: Test GDB remove and watch overflow
 
+
+def pytest_generate_tests(metafunc):
+    if "gdb" in metafunc.function.__name__:
+        if metafunc.config.getoption("no_gdb"):
+            pytest.skip('Skipping GDB test...')
+
+
 @pytest.fixture
 def gdb_path():
-    # TODO: Proper GDB path
-    return 'C:\\MinGW\\bin\\gdb.exe'
+    if sys.platform == 'win32':
+        return 'gdb.exe'
+    # GDB should be installed on unix
+    return None
 
 
-@pytest.mark.skip
-def test_gdb(hack, app, gdb_path):
-    hack.attach(app.pid)
-    
+def test_gdb(program_name, app_addresses, gdb_path):
+
+    hack = gh.Hack()
+    hack.attach(program_name)
+
     gdb = GDB(gdb_path)
     
     gdb.attach(hack.process.pid)
@@ -27,8 +39,8 @@ def test_gdb(hack, app, gdb_path):
         previous = (previous + 1) % 4
         updated = (updated + 1) % 4
 
-    for addr in app.addr.roots:
-        w = Watch('w1', addr + 8, assert_watch)
+    for i, addr in enumerate(app_addresses.roots):
+        w = Watch('w' + str(i), addr + 8, assert_watch)
         w.c_type = 'unsigned int'
 
         gdb.add_watch(w)

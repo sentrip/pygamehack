@@ -6,35 +6,25 @@ def test_variable_str_type():
     assert gh.str[32] == (gh.str, 32)
 
 
-"""
 def test_variable_str_read(hack, app):
-    hack.attach(app.pid)
+    for addr in app.addr.roots:
+        variable = gh.str(gh.Address(hack, addr + app.offsets.Basic.str), 8)
 
-    variable = gh.str(gh.Address(hack, app.addr.int_types.value + 32), 32)
-
-    assert variable.read() == "TestString"
+        assert variable.read() == "TestStr"
 
 
-def test_variable_str_write(hack, app, set_cleanup):
-    def cleanup():
-        variable.write("TestString")
+def test_variable_str_write(hack, app, reset_app):
+    for addr in app.addr.roots:
+        variable = gh.str(gh.Address(hack, addr + app.offsets.Basic.str), 8)
+
+        variable.write("StrTest")
+
         variable.flush()
 
-    set_cleanup(cleanup)
+        assert variable.read() == "StrTest"
 
-    hack.attach(app.pid)
+        variable.reset()
+        assert variable.get() == ""
 
-    variable = gh.str(gh.Address(hack, app.addr.int_types.value + 32), 32)
-
-    variable.write("StringTest")
-
-    variable.flush()
-
-    assert variable.read() == "StringTest"
-
-    variable.reset()
-    assert variable.get() == ""
-
-    with pytest.raises(RuntimeError):
-        variable.write("0" * 100)
-"""
+        with pytest.raises(RuntimeError):
+            variable.write("0" * 100)
