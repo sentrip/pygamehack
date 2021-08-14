@@ -196,17 +196,17 @@ def response_is_finished(gdb_mi_text: str):
         return False
 
 
-def assert_match(actual_char_or_str, expected_char_or_str):
-    # Skip: If values don't match, print them and raise a ValueError, otherwise,
-    # continue
-    # Raises: ValueError if arguments do not match"""
-    if expected_char_or_str != actual_char_or_str:
-        print("Expected")
-        print(expected_char_or_str)
-        print("")
-        print("Got")
-        print(actual_char_or_str)
-        raise ValueError()
+# def assert_match(actual_char_or_str, expected_char_or_str):
+#     # Skip: If values don't match, print them and raise a ValueError, otherwise,
+#     # continue
+#     # Raises: ValueError if arguments do not match"""
+#     if expected_char_or_str != actual_char_or_str:
+#         print("Expected")
+#         print(expected_char_or_str)
+#         print("")
+#         print("Got")
+#         print(actual_char_or_str)
+#         raise ValueError()
 
 
 # ========================================================================

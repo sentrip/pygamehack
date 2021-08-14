@@ -27,7 +27,7 @@ def test_gdb(program_name, app_addresses, gdb_path):
     hack.attach(program_name)
 
     gdb = GDB(gdb_path)
-    
+
     gdb.attach(hack.process.pid)
 
     previous, updated = 0, 1

@@ -28,7 +28,7 @@ if __name__ == '__main__':
     
     elif sys.argv[1] == 't':
         os.system('python setup.py install')
-        os.system('pytest -s ' + ' '.join(sys.argv[2:] if len(sys.argv) > 2 else []))
+        os.system('pytest --no-gdb -s ' + ' '.join(sys.argv[2:] if len(sys.argv) > 2 else []))
 
     elif sys.argv[1] == 'r':
         assert len(sys.argv) == 3, "Must provide release type (patch, minor, major)"

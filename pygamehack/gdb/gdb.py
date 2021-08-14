@@ -56,7 +56,8 @@ class GDB(object):
     def __init__(self, path=None):
         self._io = None
         self._process = None
-        self._timeout = 0.05
+        self._default_timeout = 0.075
+        self._timeout = self._default_timeout
         self._command = [_get_gdb_path(path)] + _DEFAULT_GDB_ARGS
         self._attached = False
         self._can_attach = True
@@ -65,6 +66,9 @@ class GDB(object):
         self._threads = set()
         self._watches = {}
         self._watch_queue = deque()
+
+    def set_timeout(self, timeout: float):
+        self._timeout = max(self._default_timeout, timeout)
 
     def attach(self, process_id):
         if not self._can_attach:
@@ -101,7 +105,7 @@ class GDB(object):
 
     def add_watch(self, watch: Watch, thread: str = DEFAULT_THREAD):
         # assert thread in self._threads, "Invalid thread id"
-        assert watch.name not in self._watches and watch._expression not in self._watches
+        assert watch.name not in self._watches and watch._expression not in self._watches, "Watch already exists"
         watch._thread = thread
         self._watches[watch.name] = watch
         self._watches[watch._expression] = watch
